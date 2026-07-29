@@ -1,0 +1,387 @@
+viewer:
+  eye: !!python/tuple
+  - 7.5
+  - 7.5
+  - 7.5
+  lookat: !!python/tuple
+  - 0.0
+  - 0.0
+  - 0.0
+  cam_prim_path: /OmniverseKit_Persp
+  resolution: !!python/tuple
+  - 1280
+  - 720
+  origin_type: world
+  env_index: 0
+  asset_name: null
+  body_name: null
+sim:
+  physics_prim_path: /physicsScene
+  device: cuda:0
+  dt: 0.01
+  render_interval: 2
+  gravity: !!python/tuple
+  - 0.0
+  - 0.0
+  - -9.81
+  enable_scene_query_support: false
+  use_fabric: true
+  physx:
+    solver_type: 1
+    min_position_iteration_count: 1
+    max_position_iteration_count: 255
+    min_velocity_iteration_count: 0
+    max_velocity_iteration_count: 255
+    enable_ccd: false
+    enable_stabilization: false
+    enable_external_forces_every_iteration: true
+    enable_enhanced_determinism: false
+    bounce_threshold_velocity: 0.5
+    friction_offset_threshold: 0.04
+    friction_correlation_distance: 0.025
+    gpu_max_rigid_contact_count: 8388608
+    gpu_max_rigid_patch_count: 163840
+    gpu_found_lost_pairs_capacity: 2097152
+    gpu_found_lost_aggregate_pairs_capacity: 33554432
+    gpu_total_aggregate_pairs_capacity: 2097152
+    gpu_collision_stack_size: 67108864
+    gpu_heap_capacity: 67108864
+    gpu_temp_buffer_capacity: 16777216
+    gpu_max_num_partitions: 8
+    gpu_max_soft_body_contacts: 1048576
+    gpu_max_particle_contacts: 1048576
+    solve_articulation_contact_last: false
+  physics_material:
+    func: isaaclab.sim.spawners.materials.physics_materials:spawn_rigid_body_material
+    static_friction: 0.5
+    dynamic_friction: 0.5
+    restitution: 0.0
+    friction_combine_mode: multiply
+    restitution_combine_mode: multiply
+    compliant_contact_stiffness: 0.0
+    compliant_contact_damping: 0.0
+  render:
+    enable_translucency: null
+    enable_reflections: null
+    enable_global_illumination: null
+    antialiasing_mode: null
+    enable_dlssg: null
+    enable_dl_denoiser: null
+    dlss_mode: null
+    enable_direct_lighting: null
+    samples_per_pixel: null
+    enable_shadows: null
+    enable_ambient_occlusion: null
+    dome_light_upper_lower_strategy: null
+    carb_settings: null
+    rendering_mode: null
+  create_stage_in_memory: false
+  logging_level: WARNING
+  save_logs_to_file: true
+  log_dir: null
+ui_window_class_type: isaaclab.envs.ui.base_env_window:BaseEnvWindow
+seed: 42
+decimation: 2
+is_finite_horizon: false
+episode_length_s: 180.0
+scene:
+  num_envs: 4096
+  env_spacing: 20.0
+  lazy_sensor_update: true
+  replicate_physics: true
+  filter_collisions: true
+  clone_in_fabric: true
+events: null
+observation_space: 31
+num_observations: null
+state_space: 0
+num_states: null
+observation_noise_model: null
+action_space: 6
+num_actions: null
+action_noise_model: null
+rerender_on_reset: false
+num_rerenders_on_reset: 0
+wait_for_textures: true
+xr: null
+log_dir: /root/home/rl_ws/isaaclab/logs/rsl_rl/pkrc_wallscan/2026-07-29_03-47-52_rb_train
+debug_vis: true
+robot:
+  class_type: isaaclab.assets.articulation.articulation:Articulation
+  prim_path: /World/envs/env_.*/Robot
+  spawn:
+    func: isaaclab.sim.spawners.from_files.from_files:spawn_from_usd
+    visible: true
+    semantic_tags: null
+    copy_from_source: true
+    mass_props: null
+    deformable_props: null
+    rigid_props:
+      rigid_body_enabled: null
+      kinematic_enabled: null
+      disable_gravity: false
+      linear_damping: null
+      angular_damping: null
+      max_linear_velocity: null
+      max_angular_velocity: null
+      max_depenetration_velocity: 10.0
+      max_contact_impulse: null
+      enable_gyroscopic_forces: false
+      retain_accelerations: null
+      solver_position_iteration_count: null
+      solver_velocity_iteration_count: null
+      sleep_threshold: null
+      stabilization_threshold: null
+    collision_props: null
+    activate_contact_sensors: false
+    scale: null
+    articulation_props:
+      articulation_enabled: null
+      enabled_self_collisions: false
+      solver_position_iteration_count: 8
+      solver_velocity_iteration_count: 0
+      sleep_threshold: null
+      stabilization_threshold: null
+      fix_root_link: null
+    fixed_tendons_props: null
+    spatial_tendons_props: null
+    joint_drive_props: null
+    visual_material_path: material
+    visual_material: null
+    usd_path: /root/home/rl_ws/marinelab/marinelab/assets/pkrc/meshes/PKRC.usd
+    variants: null
+  init_state:
+    pos: !!python/tuple
+    - 0.0
+    - 0.0
+    - 2.0
+    rot: !!python/tuple
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    lin_vel: !!python/tuple
+    - 0.0
+    - 0.0
+    - 0.0
+    ang_vel: !!python/tuple
+    - 0.0
+    - 0.0
+    - 0.0
+    joint_pos: {}
+    joint_vel: {}
+  collision_group: 0
+  debug_vis: false
+  articulation_root_prim_path: null
+  soft_joint_pos_limit_factor: 1.0
+  actuators: {}
+  actuator_value_resolution_debug_print: false
+body_link_name: Robot
+hydrodynamics:
+  added_mass: !!python/tuple
+  - 19.4
+  - 64.65
+  - 64.65
+  - 0.5
+  - 0.5
+  - 0.5
+  linear_damping: !!python/tuple
+  - 97.79
+  - 119.44
+  - 119.44
+  - 15.0
+  - 15.0
+  - 4.0
+  quadratic_damping: !!python/tuple
+  - 180.85
+  - 38.51
+  - 38.51
+  - 30.0
+  - 30.0
+  - 8.0
+  volume: 0.02337
+  body_name: Robot
+  center_of_buoyancy: !!python/tuple
+  - 0.0
+  - 0.0
+  - 0.15
+  center_of_gravity: !!python/tuple
+  - 0.0
+  - 0.0
+  - 0.0
+  water_density: 997.0
+  use_full_coriolis: true
+  rigid_body_inertia: null
+  body_mass: 22.8
+  apply_added_mass_force: false
+  added_mass_stability_factor: 0.8
+  damping_cross_coupling: null
+  damping_stability_factor: null
+thrusters:
+  num_thrusters: 6
+  max_thrust: 51.5
+  thrust_coefficient: 40.0
+  time_constant_up: 0.1
+  time_constant_down: 0.05
+  enable_thrust_curve: false
+  thrust_deadband: 0.075
+  actuation_noise_std: 0.0
+  allocation_matrix: !!python/tuple
+  - - 1.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.0
+    - 1.0
+    - 1.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 1.0
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.16
+    - -0.16
+  - - 0.0
+    - 0.0
+    - 0.09
+    - 0.09
+    - 0.0
+    - 0.0
+  - - -0.15
+    - 0.15
+    - 0.15
+    - -0.15
+    - 0.0
+    - 0.0
+sensors:
+  sonar_noise: 0.05
+  depth_noise: 0.02
+  ins_noise: 0.01
+  dvl_noise: 0.02
+  ukfm_noise: 0.03
+  ukfm_valid_max_depth: 8.0
+  ukfm_tilt_max: 0.5
+  sonar_mount_pos: !!python/tuple
+  - 0.1
+  - 0.0
+  sonar_yaw_offset: 0.0
+  sonar_mount_dr: 0.08
+  sonar_yaw_dr: 0.04
+  sonar_bias_dr: 0.1
+  depth_bias_dr: 0.1
+  ins_att_bias_dr: 0.04
+  ins_gyro_bias_dr: 0.02
+  dvl_bias_dr: 0.01
+  ukfm_bias_dr: 0.1
+scan:
+  z_top: 8.5
+  z_bottom: 1.0
+  reach_eps: 0.6
+  reach_hold: 10
+  sway_step: 1.0
+  skip_sway: false
+  ref_step: 0.004
+  ref_step_s: 0.002
+tank_radius: 6.0
+tank_height: 10.0
+d_ref: 1.5
+d_min: 0.4
+search_omega: 0.63
+success_cycles: 3
+wall_dist_scale: 5.0
+heading_scale: 5.0
+depth_scale: 1.5
+sway_scale: 2.5
+upright_scale: 2.0
+waypoint_bonus: 400.0
+progress_scale: 75.0
+collision_penalty: -50.0
+action_rate_scale: -0.06
+action_mag_scale: -0.0005
+ang_vel_scale: -0.005
+alive_scale: 0.1
+cross_vel_scale: -2.0
+scan_speed_cap: 0.2
+overspeed_scale: -3.0
+tilt_scale: -8.0
+enable_vertical: true
+enable_sway: true
+hard_collision_term: true
+randomization:
+  enable: true
+  position_x_range: !!python/tuple
+  - -2.5
+  - 2.5
+  position_y_range: !!python/tuple
+  - -2.5
+  - 2.5
+  position_z_range: !!python/tuple
+  - 1.5
+  - 2.5
+  roll_range: !!python/tuple
+  - -0.628
+  - 0.628
+  pitch_range: !!python/tuple
+  - -0.628
+  - 0.628
+  yaw_range: !!python/tuple
+  - 0.0
+  - 6.283
+  added_mass_scale: !!python/tuple
+  - 0.8
+  - 1.2
+  linear_damping_scale: !!python/tuple
+  - 0.8
+  - 1.2
+  quadratic_damping_scale: !!python/tuple
+  - 0.8
+  - 1.2
+  volume_scale: !!python/tuple
+  - 0.95
+  - 1.05
+  thrust_coefficient_scale: !!python/tuple
+  - 0.9
+  - 1.1
+  time_constant_scale: !!python/tuple
+  - 0.9
+  - 1.1
+  cob_offset_x: !!python/tuple
+  - -0.03
+  - 0.03
+  cob_offset_y: !!python/tuple
+  - -0.03
+  - 0.03
+  cob_offset_z: !!python/tuple
+  - -0.03
+  - 0.03
+  cog_offset_x: !!python/tuple
+  - -0.03
+  - 0.03
+  cog_offset_y: !!python/tuple
+  - -0.03
+  - 0.03
+  cog_offset_z: !!python/tuple
+  - -0.03
+  - 0.03
+  inertia_scale: !!python/tuple
+  - 0.9
+  - 1.1
+doraemon:
+  enable: true
+  success_cycles: 1
+  alpha: 0.5
+  kl_ub: 0.5
+  init_concentration: 30.0
+  step_interval: 250
+  min_episodes: 500
+  buffer_size: 4000
