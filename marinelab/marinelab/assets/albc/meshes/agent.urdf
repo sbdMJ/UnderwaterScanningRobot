@@ -1,0 +1,188 @@
+<?xml version="1.0"?>
+<!--
+  ALBC URDF - Active Linear Buoyancy Controller (ALBC) Robot
+  Author: Taesik Kim
+  Last revision: 2025-02-02
+  Version: 1.1.0
+
+  Structure:
+    base (main body) - gripper (fixed)
+                     - joint1 (revolute) - link1 (arm1)
+                                         - joint2 (revolute) - link2 (arm2)
+                                                             - buoy_fixer (fixed) - link3 (buoy)
+
+  Physical Properties:
+    - Total mass: ~10.61 kg (base: 9.18, gripper: 0.3, links: 0.2, buoy: 0.93)
+    - Water density: 998 kg/m3 (freshwater)
+    - Net buoyancy: ~+10 N (positive buoyancy, main 88.1 + buoy 26.2 - weight 104.1)
+-->
+<robot name="agent">
+
+  <!-- ========== MATERIALS ========== -->
+  <material name="black"><color rgba="0.0 0.0 0.0 1.0"/></material>
+  <material name="blue"><color rgba="0.0 0.0 0.8 1.0"/></material>
+  <material name="green"><color rgba="0.0 0.8 0.0 1.0"/></material>
+  <material name="grey"><color rgba="0.2 0.2 0.2 1.0"/></material>
+  <material name="silver"><color rgba="0.914 0.914 0.847 1.0"/></material>
+  <material name="orange"><color rgba="1.0 0.424 0.039 1.0"/></material>
+  <material name="brown"><color rgba="0.871 0.812 0.765 1.0"/></material>
+  <material name="red"><color rgba="0.8 0.0 0.0 1.0"/></material>
+  <material name="white"><color rgba="1.0 1.0 1.0 1.0"/></material>
+  <material name="cobaltblue"><color rgba="0.0 0.278 0.671 1.0"/></material>
+
+  <!-- ========== BASE LINK (Main Body) ========== -->
+  <!-- Cylinder: R=0.09m, L=0.325m, mass=9.18kg -->
+  <!-- CoG offset (0,0,-0.05) for passive stability (CoG below CoB) -->
+  <link name="base">
+    <visual>
+      <origin xyz="0 0 -0.02" rpy="3.14159 0 1.0472"/>
+      <geometry>
+        <mesh filename="agent_body.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.09" length="0.325"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
+      <mass value="9.18"/>
+      <inertia ixx="0.0994" ixy="0" ixz="0" iyy="0.0994" iyz="0" izz="0.0372"/>
+    </inertial>
+  </link>
+
+  <!-- ========== GRIPPER ========== -->
+  <!-- Fixed to base, mass=0.3kg -->
+  <link name="gripper">
+    <visual>
+      <origin xyz="0 0 -0.02" rpy="2.9671 0 0"/>
+      <geometry>
+        <mesh filename="gripper_set.obj" scale="1 1 1"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="-0.1745 0 0"/>
+      <geometry>
+        <cylinder radius="0.015" length="0.325"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.3"/>
+      <inertia ixx="0.00266" ixy="0" ixz="0" iyy="0.00266" iyz="0" izz="0.00003375"/>
+    </inertial>
+  </link>
+
+  <joint name="base_to_gripper" type="fixed">
+    <parent link="base"/>
+    <child link="gripper"/>
+    <origin xyz="0 0.0881 -0.185" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========== ALBC (Active Linear Buoyancy Controller) ========== -->
+  <!-- 2-DOF revolute arm with buoy for attitude control -->
+
+  <!-- Joint1: Base to Link1 (Z-axis rotation, continuous for cable-aware constraint) -->
+  <joint name="joint1" type="continuous">
+    <parent link="base"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0.1625" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.7" friction="1"/>
+    <limit effort="200" velocity="30"/>
+  </joint>
+
+  <!-- Link1: First arm segment -->
+  <!-- Box: 0.233 x 0.025 x 0.01 m, mass=0.1kg -->
+  <link name="link1">
+    <visual>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.233 0.025 0.01"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.233 0.025 0.01"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.00000604" ixy="0" ixz="0" iyy="0.00045324" iyz="0" izz="0.00045762"/>
+    </inertial>
+  </link>
+
+  <!-- Joint2: Link1 to Link2 (Z-axis rotation, continuous rotation motor) -->
+  <joint name="joint2" type="continuous">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="0.233 0 0.01" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.7" friction="1"/>
+    <limit effort="200" velocity="30"/>
+  </joint>
+
+  <!-- Link2: Second arm segment -->
+  <!-- Box: 0.233 x 0.025 x 0.01 m, mass=0.1kg -->
+  <link name="link2">
+    <visual>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.233 0.025 0.01"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.233 0.025 0.01"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.116 0 0.01" rpy="0 0 0"/>
+      <mass value="0.1"/>
+      <inertia ixx="0.00000604" ixy="0" ixz="0" iyy="0.00045324" iyz="0" izz="0.00045762"/>
+    </inertial>
+  </link>
+
+  <!-- Buoy Fixer: Link2 to Buoy (fixed) -->
+  <joint name="buoy_fixer" type="fixed">
+    <parent link="link2"/>
+    <child link="link3"/>
+    <origin xyz="0.233 0 0.01" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Link3 (Buoy): Positive buoyancy element -->
+  <!-- Cylinder: R=0.085m, H=0.118m, mass=0.93kg -->
+  <!-- Volume: pi * 0.085^2 * 0.118 = 0.00268 m^3 -->
+  <!-- Buoyancy force: 998 * 9.81 * 0.00268 = 26.24 N -->
+  <!-- Weight: 0.93 * 9.81 = 9.12 N -->
+  <!-- Net buoyancy: +17.12 N (floats) -->
+  <!-- System net force: ~+10 N (positive buoyancy) -->
+  <link name="link3">
+    <visual>
+      <origin xyz="0 0 0.059" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.085" length="0.118"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.059" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.085" length="0.118"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.059" rpy="0 0 0"/>
+      <mass value="0.93"/>
+      <!-- Cylinder inertia: Ixx=Iyy=(1/12)*m*(3r^2+h^2), Izz=(1/2)*m*r^2 -->
+      <!-- Updated for H=0.118m: Ixx=Iyy=(1/12)*0.93*(3*0.085^2+0.118^2)=0.00278 -->
+      <inertia ixx="0.00278" ixy="0" ixz="0" iyy="0.00278" iyz="0" izz="0.00336"/>
+    </inertial>
+  </link>
+
+</robot>
+

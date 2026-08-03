@@ -1,0 +1,27 @@
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Stable Baselines3 PPO configuration for BlueROV2 UUV tasks
+# Reference: https://github.com/DLR-RM/rl-baselines3-zoo/blob/master/hyperparams/ppo.yml
+
+seed: 42
+
+n_timesteps: !!float 5e6
+policy: 'MlpPolicy'
+n_steps: 48
+batch_size: 4096
+gae_lambda: 0.95
+gamma: 0.99
+n_epochs: 10
+ent_coef: 0.005
+learning_rate: !!float 3e-4
+clip_range: !!float 0.2
+policy_kwargs:
+  activation_fn: 'nn.ELU'
+  net_arch: [128, 128, 64]
+  squash_output: False
+vf_coef: 1.0
+max_grad_norm: 1.0
+device: "cuda:0"

@@ -1,0 +1,45 @@
+# marinelab Docker Compose
+# Builds the marinelab image on top of the isaaclab base image and provides
+# GPU + X11 access for interactive simulation.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yaml build
+#   xhost +local:docker
+#   docker compose -f docker/docker-compose.yaml run --rm marinelab bash
+#
+# To use a custom isaaclab image tag:
+#   ISAACLAB_IMAGE=my-isaaclab:5.1.0 docker compose -f docker/docker-compose.yaml build
+
+services:
+  marinelab:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - ISAACLAB_IMAGE=${ISAACLAB_IMAGE:-isaaclab:latest}
+    image: marinelab:latest
+    container_name: marinelab
+    environment:
+      # X11 forwarding — requires 'xhost +local:docker' on the host
+      - DISPLAY=${DISPLAY}
+      - OMNI_KIT_ALLOW_ROOT=1
+    volumes:
+      # X11 socket
+      - type: bind
+        source: /tmp/.X11-unix
+        target: /tmp/.X11-unix
+      # Bind-mount the marinelab source so local edits are reflected immediately
+      - type: bind
+        source: ..
+        target: /workspace/marinelab
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    entrypoint: bash
+    stdin_open: true
+    tty: true

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+logs/
+.omc/
+
+# session/tool state dirs — never commit
+.claude/
+.ruff_cache/
+.omx/
+.trash/
