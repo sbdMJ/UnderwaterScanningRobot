@@ -87,6 +87,22 @@ python marinelab/scripts/experiments/aggregate.py results/e2 --metrics cycles_me
   `metrics_*.json`의 아무 dotted 경로나 지정 가능.
 - E4(b) 튜닝 비용 열은 `results/tuning/*/budget.json`에서 (`collect_budgets`).
 
+## 논문 그림 (자동, 계획 §10의 F1–F6)
+
+역시 시뮬 불필요 — png + pdf 동시 생성:
+
+```bash
+python marinelab/scripts/experiments/plot_figures.py f1 results/e1                      # 본 비교 오버레이 (mean±SD + per-trial 점)
+python marinelab/scripts/experiments/plot_figures.py f2 results/e1 --cond nominal --seed 0   # 대표 궤적 (s–z 전개도)
+python marinelab/scripts/experiments/plot_figures.py f3 results/e2 --metric score.objective  # 강건성 곡선 (vs 섭동 강도)
+python marinelab/scripts/experiments/plot_figures.py f4 results/e3 --cond step --seed 0 --t-event 90  # 외란 응답 시계열
+python marinelab/scripts/experiments/plot_figures.py f5 results/e2 results/e2b --names zero-shot fine-tuned  # E2(b) 후
+python marinelab/scripts/experiments/plot_figures.py f6 results/e1 --tuning results/tuning   # 비용 비교
+```
+
+출력은 기본 `<results_dir>/fig_<이름>.{png,pdf}` (`--out`으로 변경). f2/f4는 해당
+조건·seed의 `trajectory_*.npz`에서 방법별 패널을 자동 구성한다.
+
 ## 방법/조건 추가
 
 - **조건 추가**: 실험 yaml의 `conditions:`에 항목 추가 (`dr_fluid_scale`, `current:` 프로파일,

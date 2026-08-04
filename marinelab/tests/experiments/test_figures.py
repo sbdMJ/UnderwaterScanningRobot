@@ -1,0 +1,88 @@
+# Copyright (c) 2026. SPDX-License-Identifier: BSD-3-Clause
+"""Figures F1–F6 render from synthetic artifacts and land on disk (png + pdf)."""
+
+import json
+
+import numpy as np
+import pytest
+
+from marinelab.experiments import figures as F
+
+
+def _stat(mean, sd=0.1, values=None):
+    return {"mean": mean, "sd": sd, "values": values if values is not None else [mean - sd, mean, mean + sd]}
+
+
+def _summary(metric="score.objective", conds=("nominal",)):
+    out = {}
+    for c in conds:
+        out[("fixed", c)] = {"n_trials": 3, metric: _stat(5.0)}
+        out[("diff", c)] = {"n_trials": 3, metric: _stat(3.0)}
+    return out
+
+
+def _assert_written(paths):
+    assert len(paths) == 2
+    for p in paths:
+        assert p.endswith((".png", ".pdf"))
+        import os
+        assert os.path.getsize(p) > 1000
+
+
+def test_f1_overlay(tmp_path):
+    summary = _summary()
+    summary[("fixed", "nominal")]["cycles_mean"] = _stat(2.0)
+    summary[("diff", "nominal")]["cycles_mean"] = _stat(2.4)
+    _assert_written(F.fig_overlay(summary, ["score.objective", "cycles_mean"],
+                                  str(tmp_path / "f1")))
+
+
+def test_f1_handles_inf(tmp_path):
+    summary = _summary()
+    summary[("fixed", "nominal")]["score.objective"] = _stat(float("inf"), values=[float("inf")])
+    _assert_written(F.fig_overlay(summary, ["score.objective"], str(tmp_path / "f1")))
+
+
+def _write_traj(path, steps=100, n_env=2):
+    t = np.linspace(0, 2 * np.pi, steps)
+    arr = np.tile(np.sin(t)[:, None], (1, n_env))
+    np.savez(path, s_gt=arr, z=5 + arr, s_ref=arr * 0.9, z_ref=5 + arr * 0.9,
+             wall_dist=1.5 + 0.1 * arr, tilt_deg=np.abs(arr) * 3)
+
+
+def test_f2_trajectory(tmp_path):
+    _write_traj(tmp_path / "a.npz")
+    _write_traj(tmp_path / "b.npz")
+    _assert_written(F.fig_trajectory([("fixed", str(tmp_path / "a.npz")),
+                                      ("diff", str(tmp_path / "b.npz"))],
+                                     str(tmp_path / "f2")))
+
+
+def test_f3_sweep_and_level_parse(tmp_path):
+    assert F.cond_level("dr25") == 25.0
+    with pytest.raises(ValueError):
+        F.cond_level("nominal")
+    summary = _summary(conds=("dr25", "dr50", "dr75"))
+    _assert_written(F.fig_sweep(summary, "score.objective", str(tmp_path / "f3")))
+
+
+def test_f4_timeseries(tmp_path):
+    _write_traj(tmp_path / "a.npz")
+    meta = tmp_path / "a.json"
+    meta.write_text(json.dumps({"step_dt": 0.02, "d_ref_m": 1.5}))
+    _assert_written(F.fig_timeseries([("fixed", str(tmp_path / "a.npz"), str(meta))],
+                                     str(tmp_path / "f4"), t_event=0.5))
+
+
+def test_f5_zeroshot_ft(tmp_path):
+    named = {"zero-shot": _summary(), "fine-tuned": _summary()}
+    named["fine-tuned"][("diff", "nominal")]["score.objective"] = _stat(2.0)
+    _assert_written(F.fig_zeroshot_ft(named, "score.objective", str(tmp_path / "f5")))
+
+
+def test_f6_cost(tmp_path):
+    offline = {"bo": {"wall_clock_s": 1000.0, "env_steps": 450000},
+               "ssi": {"wall_clock_s": 900.0, "env_steps": 450000},
+               "ppo": {"wall_clock_s": 90000.0, "env_steps": 8e8}}
+    summary = _summary("controller_cost.solve_ms_mean")
+    _assert_written(F.fig_cost(offline, summary, str(tmp_path / "f6")))
