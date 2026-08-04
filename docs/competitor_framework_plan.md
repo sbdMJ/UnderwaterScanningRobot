@@ -59,8 +59,11 @@ marinelab/scripts/experiments/            # [NEW] 실험 실행 계층 (sim 전�
 marinelab/tests/control/                  # [NEW] 네이티브 테스트 (Windows 개발 PC에서 실행 가능)
 ```
 
-- `control/`이 marinelab 패키지 안에 있어도 기존 파일 수정은 없다: `marinelab/__init__.py`는
-  PEP 562 lazy map이므로 새 서브패키지는 직접 경로 import(`from marinelab.control import ...`)로 쓴다.
+- `control/`이 marinelab 패키지 안에 있어도 기존 파일 수정은 없다 (서브패키지 추가는 어떤
+  기존 파일도 건드리지 않는다). 단 `marinelab/__init__.py`는 `from . import tasks`로 무거운
+  env 등록을 트리거하므로(PEP 562 lazy는 `tasks/pkrc_wallscan/__init__`에만 해당), isaaclab이
+  없는 환경에서는 `tests/conftest.py`의 패키지 shim 패턴으로 우회한다 — 테스트는 이미 자동
+  적용되고, 하드웨어 부트스트랩용 동일 shim은 P4(E5 준비)에서 standalone 모듈로 제공한다.
 - 신규 gym ID(DR 스윕·조류 변형)는 `env_variants.py` import 시점에 `gym.register`로 추가 등록
   — 기존 `tasks/pkrc_wallscan/__init__.py`는 건드리지 않는다.
 
