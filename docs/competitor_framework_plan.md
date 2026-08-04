@@ -49,11 +49,12 @@ marinelab/marinelab/control/              # [NEW] 순수 컨트롤러 계층 (is
 marinelab/scripts/experiments/            # [NEW] 실험 실행 계층 (sim 전용)
     run_experiment.py   # 단일 진입점: --config <yaml> [--method ... --cond ... --seed ...]
     env_variants.py     # E2/E3용 파생 env cfg + 신규 gym ID 등록 (기존 __init__.py 무수정)
-    tune_bo.py          # ② Optuna ~100 trial → weights json
-    aggregate.py        # results/<exp>/ 수집 → mean±SD + per-trial 오버레이 표·그림
+    tune.py             # ②④ 공용 자동 튜닝 파이프라인 (Optuna) — §6 프로토콜
+    aggregate.py        # results/<exp>/ 수집 → mean±SD + per-trial 오버레이 표·그림 + E4(b) 비용표
     bench_inference.py  # E4(c): solve+forward 마이크로벤치, isaaclab 무의존 (Jetson에서 그대로 실행)
     configs/
         e1_nominal.yaml e2_dr_sweep.yaml e2_finetune.yaml e3_current.yaml e4_ablation.yaml
+        tune_bo_nmpc.yaml tune_ssi_mpc.yaml   # 탐색 공간 선언 (방법별 차이는 이 파일뿐)
 
 marinelab/tests/control/                  # [NEW] 네이티브 테스트 (Windows 개발 PC에서 실행 가능)
 ```
@@ -113,9 +114,9 @@ class WallScanController(ABC):
 | # | 방법 | 구현 | 규모 |
 |---|---|---|---|
 | ① | Fixed-W NMPC | `fixed_nmpc.py`: `mpc_controller` 호출 어댑터. 가중치 벡터를 ctor 인자로 (기본값 = 기존 DEFAULT_WERR) | 소 |
-| ② | BO-tuned NMPC | ①과 동일 클래스 + `tune_bo.py`가 만든 `configs/bo_weights.json` 로드. Optuna objective = `run_experiment.py`를 subprocess로 (짧은 에피소드, 1 seed) 돌려 스칼라 점수 반환 | 중 |
+| ② | BO-tuned NMPC | ①과 동일 클래스 + §6 공용 튜닝(`tune.py --method bo_nmpc`)이 만든 `best_params.json` 로드 | 중 |
 | ③ | PPO | `ppo_policy.py`: onnx/torchscript 로드, obs 31-D 조립은 estimator+러너가 제공 | 소 |
-| ④ | SSI-MPC | `ssi_mpc.py`: **이식 (직접 구현 아님).** 공식 오픈소스 [UM-iRaL/SSI-MPC](https://github.com/UM-iRaL/SSI-MPC) (Zhou & Tzoumas, "Simultaneous System Identification and MPC with No Dynamic Regret", 쿼드로터+acados)에서 온라인 SysID 모듈과 OCP 결합부를 가져온다. **적응 법칙은 원 코드 그대로**(베이스라인 공정성 방어), 교체는 플랜트 모델(→`mpc_controller.py`의 UUV 모델)과 레퍼런스(→wallscan)뿐. ROS Noetic 래퍼·쿼드로터 모델은 버림. 적응 모듈은 acados 없이 단위테스트 가능하게 분리 유지 | 중 (이식) |
+| ④ | SSI-MPC | `ssi_mpc.py`: **이식 (직접 구현 아님).** 공식 오픈소스 [UM-iRaL/SSI-MPC](https://github.com/UM-iRaL/SSI-MPC) (Zhou & Tzoumas, "Simultaneous System Identification and MPC with No Dynamic Regret", 쿼드로터+acados)에서 온라인 SysID 모듈과 OCP 결합부를 가져온다. **적응 법칙은 원 코드 그대로**(베이스라인 공정성 방어), 교체는 플랜트 모델(→`mpc_controller.py`의 UUV 모델)과 레퍼런스(→wallscan)뿐. ROS Noetic 래퍼·쿼드로터 모델은 버림. 적응 모듈은 acados 없이 단위테스트 가능하게 분리 유지. 하이퍼파라미터는 수동 튜닝 금지 — §6 공용 프로토콜로만 | 중 (이식) |
 | ⑤ | Diff-WMPC | `diff_wmpc_ctrl.py`: 학습된 `WeightPolicy` 로드 → 매 스텝 가중치 → `mpc_controller`. `run_wallscan_mpc.py --policy_ckpt` 경로의 어댑터화 | 소 |
 
 **신규 작성 vs 이식 구분**: 실질적 이식은 ④뿐이다. ②는 Optuna 글루, ①③⑤는 보유 코드
@@ -144,7 +145,50 @@ class WallScanController(ABC):
   zero-shot/fine-tuned 막대)를 생성. **mean±SD + per-trial 점 오버레이** (min/max 막대 금지
   — experiments_plan.md의 통계 요구).
 
-## 6. 조건(env) 측 확장 — 전부 `env_variants.py`에서 파생으로
+## 6. 자동 튜닝 프로토콜 — BO-static(②)·SSI-MPC(④) 공용
+
+튜닝이 필요한 두 베이스라인은 **동일한 파이프라인 · 동일한 예산 · 동일한 로그 스키마**로
+튜닝한다. 목적은 두 가지: "베이스라인을 덜 튜닝해놓고 이겼다"는 리뷰 공격 봉쇄
+(부모 논문이 MOBO-MPC 비용을 460k 샘플/1071 s로 공개한 선례를 따름), 그리고
+E4(b) 비용표를 사람 손 없이 자동 생성.
+
+### 파이프라인 (`tune.py`)
+
+```
+tune.py --method {bo_nmpc, ssi_mpc} --config configs/tune_<method>.yaml
+  └─ Optuna study (TPE, sampler seed 고정, SQLite storage → 중단/재개 가능)
+       └─ trial마다: run_experiment.py 단축 프로토콜(1 seed × 단축 에피소드) 호출 → 스칼라 점수
+```
+
+- **탐색 공간은 yaml 선언** — 방법별 차이는 이 파일뿐, 파이프라인 코드는 공용:
+  - `bo_nmpc`: w_err(NE)·w_u(nu), log-scale, 상하한은 `WeightPolicy` 기본 범위와 동일
+  - `ssi_mpc`: 적응 하이퍼파라미터 (RFF 피처 수, 망각계수/정규화, 업데이트 주기 등 —
+    이식 시 원 repo의 튜닝 노브 목록으로 확정)
+- **출발선 통일**: SSI-MPC의 MPC 비용 가중치는 ②의 최적 결과를 승계한다. 가중치까지
+  다시 탐색하면 "모델 적응 vs 가중치 적응" 축이 섞이므로, SSI-MPC 튜닝은 적응
+  하이퍼파라미터에만 집중한다.
+- **objective 동일**: E1 채점 스칼라(§10-2에서 확정)를 두 방법에 그대로 사용. 충돌은
+  실패 처리. 탐색은 단축 프로토콜, **상위 k개는 full 프로토콜로 재채점** 후 최종 채택.
+- **예산 동일**: 두 방법 모두 동일 trial 수(~100) × 동일 단축 프로토콜 — "같은 예산을
+  줬다"가 수치로 성립.
+
+### 튜닝 로그 (trial마다 자동 기록)
+
+`results/tuning/<method>/`:
+
+| 파일 | 내용 |
+|---|---|
+| `study.db` | Optuna storage — 재현·중단 후 재개 |
+| `trials.csv` | trial별 파라미터 · 점수 · 에피소드 수 · 시뮬 스텝 · wall-clock |
+| `best_params.json` | 채택 파라미터 + 채택 근거(full 재채점 점수) — 컨트롤러가 직접 로드 |
+| `budget.json` | 총합: trials / episodes / env_steps / wall_clock_s |
+
+`aggregate.py`가 `budget.json`을 읽어 E4(b) 표의 "튜닝 비용" 열을 부모 논문과 동일
+단위(샘플 수·초)로 자동 생성한다. 수동 튜닝이 남는 곳은 이 프로토콜 대상이 아니다:
+Fixed-W(①)는 개발 이력(코드 주석의 실험 로그)이 곧 기록이고, PPO(③)는 학습 비용이
+W&B에 이미 기록되어 있다.
+
+## 7. 조건(env) 측 확장 — 전부 `env_variants.py`에서 파생으로
 
 | 조건 | 방식 |
 |---|---|
@@ -153,7 +197,7 @@ class WallScanController(ABC):
 | E3 조류 step/sine | base env가 조류 미연결이므로 `WallScanEnv` **서브클래스**(신규 파일)에서 `OceanCurrent` 인스턴스를 hydrodynamics에 주입 + 시간 프로파일(step 급전환, sine) 드라이브. MPC 평가 시 모델은 공칭 유지(외란 강건성 시험이므로) |
 | E4(a) ablation | preview on/off = 러너에서 frozen setpoint 생성으로 처리. `werr_ub` 500/5000 = WeightPolicy ctor 인자 노출(학습 변형은 `finetune`/신규 학습 스크립트 쪽에서). saturation-skip on/off = learner 서브클래스로 토글 |
 
-## 7. 하드웨어 이식(E5) 대비 체크리스트
+## 8. 하드웨어 이식(E5) 대비 체크리스트
 
 - [ ] `control/` + `estimator.py` + `scan_state_machine`/`mpc_reference`/`wall_frame_ekf`만으로
       폐루프 한 스텝이 도는 것을 네이티브 테스트로 보장 (isaaclab 없이)
@@ -164,13 +208,13 @@ class WallScanController(ABC):
 - [ ] 코드 공개 경계: `control/`(정식화·EKF·태스크)는 공개 가능, `algorithms/diff_wmpc.py`
       학습 코어는 비공개 — 패키지 경계가 곧 공개 경계가 되도록 유지
 
-## 8. 단계별 로드맵 (선행 순서 = experiments_plan.md 의존성 순서)
+## 9. 단계별 로드맵 (선행 순서 = experiments_plan.md 의존성 순서)
 
 | 단계 | 내용 | 실행 환경 | 완료 기준 |
 |---|---|---|---|
 | P0 | `control/` types·base·estimator + ①③⑤ 어댑터 + 네이티브 테스트 | Windows PC | 테스트 통과. 기존 111개 테스트 무손상 |
 | P1 | `run_experiment.py` + `configs/e1` + `aggregate.py` | Linux 호스트 | fixed/ppo/diff 3개 방법으로 E1 미니런(1 seed) → 기존 `run_wallscan_mpc.py`·`play.py` 결과와 지표 일치(회귀 검증) |
-| P2 | ② `tune_bo.py` / ④ SSI-MPC (적응 로직은 P0처럼 네이티브 테스트 먼저) | 양쪽 | E1 5개 방법 × 5 seed 완주 → Table 1 |
+| P2 | §6 `tune.py` 공용 튜닝 파이프라인 / ④ SSI-MPC 이식 (적응 로직은 P0처럼 네이티브 테스트 먼저) → ② BO 튜닝 실행 → ④ 튜닝 실행 | 양쪽 | E1 5개 방법 × 5 seed 완주 → Table 1 + `budget.json` 2종 |
 | P3 | E4(a) 토글 + `bench_inference.py` | 양쪽 | Table 2·3 (Jetson 실측은 후순위 가능) |
 | P4 | `env_variants.py`: DR 스윕 → fine-tune → 조류 | Linux 호스트 | E2 곡선 + E3 |
 
@@ -178,10 +222,10 @@ class WallScanController(ABC):
 Linux 호스트(RTX 4080, Docker). P0 테스트는 기존 `tests/conftest.py` 스텁 패턴을 따르므로
 torch만 있으면 된다 (현재 이 PC의 Python 3.13에는 torch 미설치 — P0 착수 시 설치 필요).
 
-## 9. 미결정 사항 (구현 지시 전 확정 필요)
+## 10. 미결정 사항 (구현 지시 전 확정 필요)
 
 1. **SSI-MPC 이식 조건** — 원 repo(UM-iRaL/SSI-MPC) 라이선스 확인·준거 커밋 고정·이식 범위 확정 (§4 ④)
-2. BO objective 스칼라화 — Table 1 지표 중 무엇의 가중합인지 (제안: 사이클 달성 + 추종 RMSE 역수, 충돌 시 실패 처리)
+2. E1 채점 스칼라 확정 — Table 1 지표 중 무엇의 가중합인지 (제안: 사이클 달성 + 추종 RMSE 역수, 충돌 시 실패 처리). §6 튜닝 objective로도 공용되므로 튜닝 착수 전 확정 필수
 3. E2 fine-tuning 예산 — "quick online fine-tuning"의 스텝 수/세그먼트 정의
 4. 조류 프로파일 수치 — step 크기·전환 시점, sine 진폭·주기 (부모 논문 세팅 대응)
 5. Python 버전 정합 — 컨테이너는 3.11, 이 PC는 3.13; `control/`은 3.11 문법 기준으로 작성
