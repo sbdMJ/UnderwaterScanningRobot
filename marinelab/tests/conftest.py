@@ -43,12 +43,17 @@ def _quat_from_euler_xyz(roll, pitch, yaw):
 def _configclass(cls):
     """Minimal stand-in for isaaclab.utils.configclass.
 
-    The real one auto-generates __init__ from annotated class attributes with
-    defaults. Our cfg classes only use simple typed defaults, so dataclass
-    semantics suffice for tests.
+    The real one auto-generates __init__ from annotated class attributes with defaults.
+    Plain ``dataclasses.dataclass`` semantics cover that, except for one thing the real
+    decorator also does: it accepts MUTABLE defaults (``param_overrides: dict = {}`` in
+    DoraemonCfg), which bare dataclass rejects. Wrapping those in a default_factory here
+    means any test can import a cfg-bearing module without re-patching this stub.
     """
     import dataclasses
 
+    for name, value in list(vars(cls).items()):
+        if name in getattr(cls, "__annotations__", {}) and isinstance(value, (dict, list, set)):
+            setattr(cls, name, dataclasses.field(default_factory=lambda d=value: type(d)(d)))
     return dataclasses.dataclass(cls)
 
 

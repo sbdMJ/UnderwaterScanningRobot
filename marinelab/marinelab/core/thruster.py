@@ -16,7 +16,44 @@ import torch
 # Import configuration class from isaaclab_assets
 from marinelab.assets import ThrusterCfg
 
-__all__ = ["ThrusterModel", "ThrusterCfg"]
+__all__ = ["ThrusterModel", "ThrusterCfg", "allocation_moment_residual"]
+
+
+def allocation_moment_residual(allocation_matrix) -> torch.Tensor:
+    """Per-thruster violation of ``tau . F_hat == 0`` in a thruster allocation matrix.
+
+    A thruster's moment about the body origin is ``tau = r x F`` for SOME mounting position
+    ``r``, and a cross product is always perpendicular to its operands. So for every column
+    of a physically realizable TAM::
+
+        (Mx, My, Mz) . normalize(Fx, Fy, Fz) == 0
+
+    independently of where the thruster sits or how it is canted. That makes this a
+    geometry-free invariant: a nonzero residual means the column cannot be produced by any
+    thruster placement, i.e. the matrix is mis-transcribed.
+
+    This exists because ``PKRCThrusterCfg`` shipped with exactly that defect — the sway
+    thrusters' 0.09 moment arm sat in the ``My`` row while their force is pure ``+y``, and a
+    pure ``+y`` force has ``tau_y == 0`` for any ``r``. Consequences were measured, not
+    guessed (2026-07-30, ``isaaclab/logs/_probe_tam_tilt.py``): the mis-assignment turned an
+    8.6 N-cancellable roll into an uncancellable 2.3 deg pitch. See
+    :class:`~marinelab.assets.pkrc.PKRCThrusterCfgFixedTAM`.
+
+    Args:
+        allocation_matrix: (6, num_thrusters) array-like, rows ``[Fx, Fy, Fz, Mx, My, Mz]``.
+
+    Returns:
+        (num_thrusters,) signed residuals. Zero-force columns return the moment norm, since
+        a moment with no force behind it is equally unphysical.
+    """
+    B = torch.as_tensor(allocation_matrix, dtype=torch.float64)
+    if B.ndim != 2 or B.shape[0] != 6:
+        raise ValueError(f"allocation_matrix must have shape (6, n); got {tuple(B.shape)}")
+    force, moment = B[:3].T, B[3:].T  # (n, 3) each
+    norm = force.norm(dim=-1)
+    dead = norm < 1e-12
+    residual = (moment * (force / norm.clamp(min=1e-12).unsqueeze(-1))).sum(-1)
+    return torch.where(dead, moment.norm(dim=-1), residual)
 
 
 class ThrusterModel:
