@@ -115,13 +115,18 @@ class WallScanController(ABC):
 | ① | Fixed-W NMPC | `fixed_nmpc.py`: `mpc_controller` 호출 어댑터. 가중치 벡터를 ctor 인자로 (기본값 = 기존 DEFAULT_WERR) | 소 |
 | ② | BO-tuned NMPC | ①과 동일 클래스 + `tune_bo.py`가 만든 `configs/bo_weights.json` 로드. Optuna objective = `run_experiment.py`를 subprocess로 (짧은 에피소드, 1 seed) 돌려 스칼라 점수 반환 | 중 |
 | ③ | PPO | `ppo_policy.py`: onnx/torchscript 로드, obs 31-D 조립은 estimator+러너가 제공 | 소 |
-| ④ | SSI-MPC | `ssi_mpc.py`: **최대 신규 작업.** 동일 acados OCP를 쓰되 모델 파라미터(또는 residual 항)를 온라인 적응. 순수 적응 로직(RLS/윈도우 회귀)은 acados 없이 단위테스트 가능하게 분리 | 대 |
+| ④ | SSI-MPC | `ssi_mpc.py`: **이식 (직접 구현 아님).** 공식 오픈소스 [UM-iRaL/SSI-MPC](https://github.com/UM-iRaL/SSI-MPC) (Zhou & Tzoumas, "Simultaneous System Identification and MPC with No Dynamic Regret", 쿼드로터+acados)에서 온라인 SysID 모듈과 OCP 결합부를 가져온다. **적응 법칙은 원 코드 그대로**(베이스라인 공정성 방어), 교체는 플랜트 모델(→`mpc_controller.py`의 UUV 모델)과 레퍼런스(→wallscan)뿐. ROS Noetic 래퍼·쿼드로터 모델은 버림. 적응 모듈은 acados 없이 단위테스트 가능하게 분리 유지 | 중 (이식) |
 | ⑤ | Diff-WMPC | `diff_wmpc_ctrl.py`: 학습된 `WeightPolicy` 로드 → 매 스텝 가중치 → `mpc_controller`. `run_wallscan_mpc.py --policy_ckpt` 경로의 어댑터화 | 소 |
 
-**④ 착수 전 결정 필요**: SSI-MPC 원 논문의 정식화(적응 대상이 모델 계수인지 residual인지,
-업데이트 법칙, 지면효과 실험의 세팅)를 확정하고 이 문서에 부록으로 박은 뒤 구현한다.
-경쟁 방법을 불리하게 약식 구현하면 E1 결과 전체가 공격받는다 — 튜닝 노력도 제안 방법과
-동급으로 기록해 둘 것(리뷰 대응).
+**신규 작성 vs 이식 구분**: 실질적 이식은 ④뿐이다. ②는 Optuna 글루, ①③⑤는 보유 코드
+어댑터, 러너·집계·env variants는 우리 고유 인프라. Diff-WMPC는 이미 이식 완료 상태
+(`algorithms/diff_wmpc.py` = 마린짐 참조 구현의 포트; TUM 원 코드는 골격만 공개라
+논문에는 "자체 구현" 명시 — experiments_plan.md 제외표 참조).
+
+**④ 착수 전 확인 필요**: 원 repo의 라이선스(재배포·수정 허용 범위), 준거 커밋 고정,
+이식 범위(SysID 모듈 + 솔버 결합부) 확정. 경쟁 방법을 불리하게 약식 구현하면 E1 결과
+전체가 공격받으므로 적응 법칙은 원 코드를 보존하고, 튜닝 노력도 제안 방법과 동급으로
+기록해 둘 것(리뷰 대응).
 
 ---
 
@@ -175,7 +180,7 @@ torch만 있으면 된다 (현재 이 PC의 Python 3.13에는 torch 미설치 �
 
 ## 9. 미결정 사항 (구현 지시 전 확정 필요)
 
-1. **SSI-MPC 정식화** — 원 논문 기준 적응 대상·업데이트 법칙 확정 (§4 ④)
+1. **SSI-MPC 이식 조건** — 원 repo(UM-iRaL/SSI-MPC) 라이선스 확인·준거 커밋 고정·이식 범위 확정 (§4 ④)
 2. BO objective 스칼라화 — Table 1 지표 중 무엇의 가중합인지 (제안: 사이클 달성 + 추종 RMSE 역수, 충돌 시 실패 처리)
 3. E2 fine-tuning 예산 — "quick online fine-tuning"의 스텝 수/세그먼트 정의
 4. 조류 프로파일 수치 — step 크기·전환 시점, sine 진폭·주기 (부모 논문 세팅 대응)
