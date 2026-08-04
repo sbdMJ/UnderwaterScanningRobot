@@ -12,6 +12,11 @@ import importlib
 _LAZY = {
     "ExperimentCell": ".protocol",
     "load_cells": ".protocol",
+    "ScoreAccumulator": ".scoring",
+    "step_losses": ".scoring",
+    "TuneRecorder": ".tuning",
+    "load_tune_config": ".tuning",
+    "suggest_params": ".tuning",
     "collect": ".aggregate",
     "summarize": ".aggregate",
     "write_table_csv": ".aggregate",

@@ -1,0 +1,28 @@
+# §6 unified tuning — BO-static NMPC (E1 method ②).
+# ~100 TPE trials over the 12-D error-weight vector + scalar control weight,
+# shortened protocol for search, full protocol for top-k rescore.
+method: bo_nmpc
+task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+tam: fixed
+state: gt
+seed: 0            # env seed (fixed across trials: same conditions for every candidate)
+sampler_seed: 0    # TPE reproducibility
+
+trials: 100
+steps: 4500        # search protocol: 90 s — covers descend + first sway leg
+rescore_top_k: 3
+rescore_steps: 9000  # full 180 s episode, same as the E1 protocol
+
+space:
+  # Bounds match WeightPolicy's search range (diff_wmpc.py) so ② and ⑤ explore the
+  # same weight space — the comparison isolates "static vs varying", not the bounds.
+  werr:
+    size: 12
+    low: 0.1
+    high: 5000.0
+    log: true
+  wu:
+    size: 1
+    low: 0.005
+    high: 5.0
+    log: true

@@ -62,6 +62,20 @@ class FixedWeightNMPC(WallScanController):
     def weights(self) -> np.ndarray:
         return self._weights
 
+    def set_weights(self, werr, wu) -> None:
+        """Swap the fixed weight set without rebuilding the solver (weights are per-solve).
+
+        This is what makes the §6 tuning loop cheap: one acados build, N trials.
+        """
+        werr = np.asarray(werr, float).reshape(-1)
+        wu_arr = np.asarray(wu, float).reshape(-1)
+        if wu_arr.size == 1:
+            wu_arr = np.full(self._mpc.nu, float(wu_arr[0]))
+        w = np.concatenate([werr, wu_arr])
+        if w.size != self._mpc.n_pglobal:
+            raise ValueError(f"weights length {w.size} != solver's {self._mpc.n_pglobal}")
+        self._weights = w
+
     def reset(self, state: VehicleState) -> None:
         self._first = True
 
