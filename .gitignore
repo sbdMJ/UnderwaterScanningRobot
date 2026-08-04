@@ -3,3 +3,15 @@ __pycache__/
 *.pyc
 logs/
 wandb/
+
+# --- run artifacts -----------------------------------------------------------
+# Raw trajectory dumps: 91 MB across 103 runs and growing with every experiment, and every one is
+# regenerable by re-running the command recorded in its metrics JSON. The JSON itself IS committed
+# -- it is the measurement record CLAUDE.md cites by filename, and it is 412 KB. Local npz files
+# are untouched, so rescore_trajectories.py / replay_wall_frame_ekf.py keep working.
+results/*.npz
+results/videos/
+# Written by play.py on every startup as a "did the checkpoint really load" smoke check.
+checkpoints/exported/
+# Intermediate training checkpoints. Only policy_final.pt is ever referenced.
+checkpoints/**/policy_[0-9]*.pt
