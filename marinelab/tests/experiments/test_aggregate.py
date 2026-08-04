@@ -7,7 +7,7 @@ import json
 import pytest
 
 from marinelab.experiments.aggregate import (
-    collect, collect_budgets, flatten, summarize, write_table_csv,
+    collect, collect_budgets, flatten, summarize, write_table_csv, write_table_tex,
 )
 
 
@@ -65,6 +65,31 @@ def test_write_table_csv(results, tmp_path):
     row = next(r for r in table if r["method"] == "fixed" and r["metric"] == "cycles_mean")
     assert row["values"] == "1.8;2;2.2" or row["values"] == "2;1.8;2.2"  # seed order
     assert row["n_trials"] == "3"
+
+
+def test_write_table_tex(results, tmp_path):
+    rows = collect(str(results))
+    metrics = ["cycles_mean", "controller_cost.solve_ms_mean"]
+    summary = summarize(rows, metrics)
+    out = tmp_path / "table.tex"
+    write_table_tex(summary, metrics, str(out))
+    tex = out.read_text()
+    assert "\\toprule" in tex and "\\bottomrule" in tex
+    assert "Fixed-W NMPC & 2 $\\pm$ 0.2" in tex          # mean ± sd, method label mapped
+    assert "Diff-WMPC (ours)" in tex
+    assert tex.index("Fixed-W NMPC") < tex.index("Diff-WMPC")  # METHOD_ORDER respected
+    assert "controller\\_cost.solve\\_ms\\_mean" in tex   # header underscores escaped
+    assert "multicolumn" not in tex                       # single condition: no cond blocks
+
+
+def test_write_table_tex_inf_renders_dash(tmp_path):
+    payload = {"score": {"objective": float("inf")}}
+    (tmp_path / "metrics_fixed_nominal_s0.json").write_text(json.dumps(payload))
+    rows = collect(str(tmp_path))
+    summary = summarize(rows, ["score.objective"])
+    out = tmp_path / "t.tex"
+    write_table_tex(summary, ["score.objective"], str(out))
+    assert "--" in out.read_text()
 
 
 def test_collect_budgets(tmp_path):

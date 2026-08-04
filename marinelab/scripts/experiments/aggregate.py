@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tests"))
 import conftest  # noqa: F401,E402  (installs the isaaclab/marinelab shims)
 
-from marinelab.experiments.aggregate import collect, summarize, write_table_csv  # noqa: E402
+from marinelab.experiments.aggregate import (  # noqa: E402
+    collect, summarize, write_table_csv, write_table_tex,
+)
 
 # Table 1 columns; top-level keys are eval_metrics.compute_metrics' scored-window values.
 DEFAULT_METRICS = [
@@ -52,7 +54,9 @@ def main() -> None:
     summary = summarize(rows, args.metrics)
     out = args.out or os.path.join(args.results_dir, "table.csv")
     write_table_csv(summary, args.metrics, out)
-    print(f"[INFO] {len(rows)} trials -> {out}")
+    tex = os.path.splitext(out)[0] + ".tex"
+    write_table_tex(summary, args.metrics, tex)
+    print(f"[INFO] {len(rows)} trials -> {out} + {tex}")
     for (method, cond), entry in summary.items():
         first = args.metrics[0]
         s = entry[first]
