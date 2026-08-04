@@ -69,6 +69,7 @@ from marinelab.control import (
 )
 from marinelab.control.types import ScanReference
 from marinelab.experiments.protocol import ExperimentCell, load_cells
+from marinelab.experiments.scoring import ScoreAccumulator
 from marinelab.tasks.pkrc_wallscan import eval_metrics as em
 from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref, scan_state_machine as ssm
 from marinelab.tasks.pkrc_wallscan.mpc_controller import PlantParams
@@ -215,7 +216,19 @@ class SimSensorStream:
         return sample, truth
 
 
-def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg) -> dict:
+def _gt_errors(env, pos, quat, z_ref, s_ref, prev_z, prev_s, theta, s_anchor, dt, mpc_cfg):
+    """(n, 12) wallscan error vector on GROUND TRUTH — the scoring input (plan §10-2)."""
+    x = torch.cat([pos, quat, env._robot.data.root_lin_vel_b,
+                   env._robot.data.root_ang_vel_b], dim=-1)
+    v_z_des = (z_ref - prev_z) / dt if prev_z is not None else torch.zeros_like(z_ref)
+    v_tan_des = (s_ref - prev_s) / dt if prev_s is not None else torch.zeros_like(s_ref)
+    return mref.wallscan_errors(x, z_ref=z_ref, s_ref=s_ref, v_tan_des=v_tan_des,
+                                v_z_des=v_z_des, theta_anchor=theta, s_anchor=s_anchor,
+                                cfg=mpc_cfg).cpu().numpy()
+
+
+def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
+                 score: ScoreAccumulator) -> dict:
     """Controller-owned closed loop (no spin search) — port of run_wallscan_mpc.main."""
     if env.num_envs != 1:
         raise SystemExit(f"MPC methods run num_envs=1 (acados is sequential); got {env.num_envs}")
@@ -266,6 +279,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg) -> di
 
     log = em.TrajectoryLog()
     action = torch.zeros(1, 6, device=dev)
+    prev_z_ref = prev_s_ref = None
     for i in range(steps):
         if not simulation_app.is_running():
             print(f"[WARN] app closed early at {i}/{steps}")
@@ -306,9 +320,14 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg) -> di
             theta_anchor=theta_anchor, s_anchor=s_anchor, phase=int(state_sm.phase[0]),
         )
         out = ctl.step(veh, ref)
+        e_score = _gt_errors(env, pos, quat, z_ref, s_ref, prev_z_ref, prev_s_ref,
+                             theta, s_gt, dt, mpc_cfg)
+        prev_z_ref, prev_s_ref = z_ref.clone(), s_ref.clone()
         action[0] = torch.as_tensor(out.u_cmd, dtype=torch.float32, device=dev)
         _obs, _rew, terminated, truncated, _info = env.step(action)
         dones = terminated | truncated
+        score.add(e_score, out.u_cmd[None], done=dones.cpu().numpy(),
+                  collided=env._term_collided.cpu().numpy())
 
         pos_n, quat_n, yaw_n = gt_pose()
         up_z = _body_up(quat_n)[:, 2].clamp(-1.0, 1.0)
@@ -327,6 +346,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg) -> di
         )
         if dones.any():
             reset_internal()
+            prev_z_ref = prev_s_ref = None
         if args_cli.log_every and i % args_cli.log_every == 0:
             print(f"  t={i * dt:6.1f}s ph={int(state_sm.phase[0])} z={float(pos_n[0, 2]):5.2f} "
                   f"s={float(s_gt[0]):+6.2f} solve={out.solve_ms:.1f}ms")
@@ -343,7 +363,8 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg) -> di
     return {"log": log, "extras": extras}
 
 
-def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg=None) -> dict:
+def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
+                 score: ScoreAccumulator) -> dict:
     """Env-owned scan (spin search included) with the exported policy — mirrors play.py."""
     dev, dt = env.device, env.step_dt
     obs_dict, _ = env.reset()
@@ -351,6 +372,7 @@ def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg=None) 
     log = em.TrajectoryLog()
     n = env.num_envs
     action = torch.zeros(n, 6, device=dev)
+    prev_z_ref = prev_s_ref = None
     for i in range(steps):
         if not simulation_app.is_running():
             print(f"[WARN] app closed early at {i}/{steps}")
@@ -359,8 +381,21 @@ def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg=None) 
         for e in range(n):
             action[e] = torch.as_tensor(ctl.step(None, None, obs[e]).u_cmd,
                                         dtype=torch.float32, device=dev)
+        # pre-step snapshot for scoring: the state/references this action was taken against
+        pos_b = env._robot.data.root_pos_w - env.scene.env_origins
+        quat_b = env._robot.data.root_quat_w
+        theta_b = torch.atan2(pos_b[:, 1], pos_b[:, 0])
+        z_ref_b, s_ref_b = env._z_ref.clone(), env._s_ref.clone()
+        s_gt_b = env._s_gt.clone()
+        e_score = _gt_errors(env, pos_b, quat_b, z_ref_b, s_ref_b, prev_z_ref, prev_s_ref,
+                             theta_b, s_gt_b, dt, mpc_cfg)
+        prev_z_ref, prev_s_ref = z_ref_b, s_ref_b
         obs_dict, _rew, terminated, truncated, _info = env.step(action)
         dones = terminated | truncated
+        score.add(e_score, action.cpu().numpy(), done=dones.cpu().numpy(),
+                  collided=env._term_collided.cpu().numpy())
+        if dones.any():
+            prev_z_ref = prev_s_ref = None
 
         pos = env._robot.data.root_pos_w - env.scene.env_origins
         quat = env._robot.data.root_quat_w
@@ -391,9 +426,17 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
     env, cfg = build_env(cell)
     try:
         ctl, mpc_cfg = build_controller(cell, env, cfg)
+        if mpc_cfg is None:  # policy-only methods still need the error-vector cfg for scoring
+            mpc_cfg = mref.WallScanMPCCfg(
+                tank_radius=cfg.tank_radius, d_ref=cfg.d_ref,
+                z_top=cfg.scan.z_top, z_bottom=cfg.scan.z_bottom, sway_step=cfg.scan.sway_step,
+                ref_step=cfg.scan.ref_step, ref_step_s=cfg.scan.ref_step_s,
+                step_dt=env.step_dt, dt_mpc=float(opt.get("dt_mpc", 0.05)),
+            )
+        score = ScoreAccumulator(env.num_envs)
         runner = run_ppo_cell if cell.method == "ppo" else run_mpc_cell
         with torch.inference_mode():
-            result = runner(cell, env, cfg, ctl, steps, mpc_cfg)
+            result = runner(cell, env, cfg, ctl, steps, mpc_cfg, score)
 
         dt = env.step_dt
         traj = result["log"].as_arrays(step_dt=dt)
@@ -406,9 +449,13 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
             episode=None if score_episode < 0 else score_episode,
             episode_length_s=cfg.episode_length_s,
         )
+        score.finalize()
+        score_summary = score.summary(score_episode=max(0, score_episode))
         metrics.update({"exp": cell.exp, "method": cell.method, "cond": cell.cond,
                         "seed": cell.seed, "options": {k: v for k, v in opt.items()},
-                        "controller_cost": ctl.stats.summary()})
+                        "controller_cost": ctl.stats.summary(),
+                        "score": {k: score_summary[k] for k in
+                                  ("objective", "collided", "scored_losses")}})
         metrics.update(result["extras"])
 
         out_dir = cell.out_dir(results_root)
