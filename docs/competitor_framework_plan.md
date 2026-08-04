@@ -46,7 +46,11 @@ marinelab/marinelab/control/              # [NEW] 순수 컨트롤러 계층 (is
     diff_wmpc_ctrl.py   # ⑤ Diff-WMPC 어댑터 (WeightPolicy → 가중치 → mpc_controller)
     estimator.py        # 상태소스 추상화: GT | EKF (wall_frame_ekf 조립) — sim/hw 공용
 
-marinelab/scripts/experiments/            # [NEW] 실험 실행 계층 (sim 전용)
+marinelab/marinelab/experiments/          # [NEW] 실험 프로토콜의 순수 코어 (네이티브 테스트 대상)
+    protocol.py         # yaml -> 셀 행렬 전개, 결과 파일 명명 규약
+    aggregate.py        # 수집/통계(mean±SD+per-trial)/표 생성, budget.json 집계
+
+marinelab/scripts/experiments/            # [NEW] 실험 실행 계층 (sim 전용, 위 코어의 CLI)
     run_experiment.py   # 단일 진입점: --config <yaml> [--method ... --cond ... --seed ...]
     env_variants.py     # E2/E3용 파생 env cfg + 신규 gym ID 등록 (기존 __init__.py 무수정)
     tune.py             # ②④ 공용 자동 튜닝 파이프라인 (Optuna) — §6 프로토콜
