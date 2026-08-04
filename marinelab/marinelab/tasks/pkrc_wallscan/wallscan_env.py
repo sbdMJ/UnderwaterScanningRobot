@@ -22,6 +22,7 @@ from marinelab.core import HydrodynamicsModel, ThrusterModel
 
 from . import geometry, scan_state_machine
 from .scan_state_machine import ScanState
+from . import sensors as sensors_mod
 from .sensors import _body_up, apply_sensors
 from .tank import spawn_tank
 from .wallscan_env_cfg import WallScanEnvCfg
@@ -156,6 +157,7 @@ class WallScanEnv(DirectRLEnv):
             "up_vec": torch.zeros(N, 3, device=dev), "heading": torch.zeros(N, device=dev),
             "ang_vel": torch.zeros(N, 3, device=dev), "lin_vel": torch.zeros(N, 3, device=dev),
             "ukfm_xy": torch.zeros(N, 2, device=dev), "ukfm_yaw": torch.zeros(N, device=dev),
+            "lin_vel_scale": torch.zeros(N, 3, device=dev),
         }
 
         # DORAEMON adaptive dynamics DR (Train only; spec §6). _dr_xi/_dr_logp hold the
@@ -670,9 +672,16 @@ class WallScanEnv(DirectRLEnv):
             sb["sonar"][env_ids] = _u((k,), _sc.sonar_bias_dr)
             sb["depth"][env_ids] = _u((k,), _sc.depth_bias_dr)
             sb["up_vec"][env_ids] = _u((k, 3), _sc.ins_att_bias_dr)
-            sb["heading"][env_ids] = _u((k,), _sc.ins_att_bias_dr)
+            # Heading gets its own half-range: roll/pitch are gravity-referenced (0.5 deg on a
+            # 3DM-GV7) while heading leans on the magnetometer (2 deg, and questionable inside a
+            # metal tank). sensors.heading_bias_dr falls back to ins_att_bias_dr when unset, so
+            # this is a no-op for the legacy SensorCfg.
+            sb["heading"][env_ids] = _u((k,), sensors_mod.heading_bias_dr(_sc))
             sb["ang_vel"][env_ids] = _u((k, 3), _sc.ins_gyro_bias_dr)
             sb["lin_vel"][env_ids] = _u((k, 3), _sc.dvl_bias_dr)
+            # Multiplicative, per axis: sound-speed error is common-mode but beam-geometry
+            # error is not, so drawing per axis is the conservative choice.
+            sb["lin_vel_scale"][env_ids] = _u((k, 3), _sc.dvl_scale_dr)
             sb["ukfm_xy"][env_ids] = _u((k, 2), _sc.ukfm_bias_dr)
             sb["ukfm_yaw"][env_ids] = _u((k,), _sc.ukfm_bias_dr)
         else:
