@@ -43,7 +43,9 @@ import _sim_loop as sl
 from marinelab.control.base import ControllerStats
 from marinelab.experiments.protocol import ExperimentCell
 from marinelab.experiments.scoring import ScoreAccumulator
-from marinelab.experiments.tuning import TuneRecorder, load_tune_config, suggest_params
+from marinelab.experiments.tuning import (
+    TuneRecorder, load_tune_config, params_from_trial, suggest_params,
+)
 
 FAIL_OBJECTIVE = 1e12  # finite stand-in for inf so TPE can still rank failed trials
 
@@ -53,27 +55,34 @@ def main() -> None:
     method = tcfg["method"]
     if method not in ("bo_nmpc", "ssi_mpc"):
         raise SystemExit(f"unknown tuning method {method!r}")
-    if method == "ssi_mpc":
-        raise SystemExit("ssi_mpc tuning enables after the port (plan §4 ④); "
-                         "the pipeline itself is method-agnostic")
 
     out_dir = os.path.abspath(args_cli.out_root or os.path.join(
         sl.REPO_ROOT, "results", "tuning", method))
     recorder = TuneRecorder(out_dir)
 
-    # One env + one solver build for the whole study (weights are per-solve parameters).
-    cell = ExperimentCell(exp="tuning", method="fixed", cond=method,
-                          seed=int(tcfg.get("seed", 0)), options={
-                              "task": tcfg.get("task", "Isaac-PKRC-WallScan-Stage3-Direct-v0"),
-                              "tam": tcfg.get("tam", "fixed"),
-                              "state": tcfg.get("state", "gt"),
-                              "num_envs": 1,
-                              "horizon": int(tcfg.get("horizon", 30)),
-                              "dt_mpc": float(tcfg.get("dt_mpc", 0.05)),
-                              "rti_iters": int(tcfg.get("rti_iters", 8)),
-                          })
+    # One env + one solver build for the whole study (weights are per-solve parameters;
+    # SSI hyperparameters live outside the solver too).
+    options = {
+        "task": tcfg.get("task", "Isaac-PKRC-WallScan-Stage3-Direct-v0"),
+        "tam": tcfg.get("tam", "fixed"),
+        "state": tcfg.get("state", "gt"),
+        "num_envs": 1,
+        "horizon": int(tcfg.get("horizon", 30)),
+        "dt_mpc": float(tcfg.get("dt_mpc", 0.05)),
+        "rti_iters": int(tcfg.get("rti_iters", 8)),
+    }
+    if method == "ssi_mpc" and tcfg.get("inherit_weights"):
+        options["params_json"] = tcfg["inherit_weights"]  # §6: SSI starts from BO weights
+    cell = ExperimentCell(exp="tuning", method="ssi" if method == "ssi_mpc" else "fixed",
+                          cond=method, seed=int(tcfg.get("seed", 0)), options=options)
     env, cfg = sl.build_env(cell)
     ctl, mpc_cfg = sl.build_controller(cell, env, cfg)
+
+    def apply_params(params: dict) -> None:
+        if method == "bo_nmpc":
+            ctl.set_weights(params["werr"], params["wu"])
+        else:  # ssi_mpc: fresh learner with the candidate hyperparameters, fixed seed
+            ctl.reconfigure(lr=params["lr"][0], kernel_std=params["kernel_std"][0], seed=0)
 
     def episode_objective(steps: int) -> tuple[float, int]:
         ctl.stats = ControllerStats()
@@ -90,7 +99,7 @@ def main() -> None:
 
     def objective(trial: optuna.Trial) -> float:
         params = suggest_params(trial, tcfg["space"])
-        ctl.set_weights(params["werr"], params["wu"])
+        apply_params(params)
         t0 = time.perf_counter()
         obj, n_episodes = episode_objective(search_steps)
         wall = time.perf_counter() - t0
@@ -116,9 +125,8 @@ def main() -> None:
     rescore_steps = int(tcfg["rescore_steps"])
     best_obj, best_trial, best_params = float("inf"), None, None
     for t in top:
-        params = {"werr": [t.params[f"werr_{i}"] for i in range(int(tcfg["space"]["werr"].get("size", 1)))],
-                  "wu": [t.params["wu"]]}
-        ctl.set_weights(params["werr"], params["wu"])
+        params = params_from_trial(t.params, tcfg["space"])
+        apply_params(params)
         t0 = time.perf_counter()
         obj, n_episodes = episode_objective(rescore_steps)
         wall = time.perf_counter() - t0

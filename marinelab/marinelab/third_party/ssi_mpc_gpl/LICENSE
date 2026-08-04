@@ -1,0 +1,25 @@
+SPDX-License-Identifier: GPL-3.0-only
+
+Everything in this directory (marinelab/third_party/ssi_mpc_gpl/) is a port of
+code from the official SSI-MPC repository and is licensed under the GNU General
+Public License v3.0 — NOT the BSD-3-Clause license used by the rest of this
+repository.
+
+Provenance:
+  Upstream:  https://github.com/UM-iRaL/SSI-MPC
+  Commit:    e0d4afb049742d3a28267da57124fbbe948b52b5  (pinned reference)
+  Paper:     H. Zhou, V. Tzoumas, "Simultaneous System Identification and
+             Model Predictive Control with No Dynamic Regret," IEEE T-RO.
+             arXiv:2407.04143
+  Ported:    the random-Fourier-feature online system identification step
+             (ros_mpc/src/quad_mpc/quad_3d_optimizer.py, run_optimization;
+             ros_mpc/nodes/mpc_node.py, set_random_features) with the
+             adaptation law preserved verbatim; the quadrotor plant, ROS
+             wrappers and GP baselines are not ported.
+
+Internal use of this code (running experiments) carries no GPL obligations;
+obligations attach on distribution. Before any public release of this
+repository, either include the full GPL-3.0 text here
+(https://www.gnu.org/licenses/gpl-3.0.txt) and mark this directory's license
+in the release notes, or exclude this directory from the release
+(available on request / use upstream).

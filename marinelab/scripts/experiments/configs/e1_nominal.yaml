@@ -25,6 +25,11 @@ methods:
   ppo:
     num_envs: 8            # policy inference is parallel; 8 trials per seed
     policy: checkpoints/exported/policy.pt   # written by play.py on checkpoint load
-  # ssi: enabled after the port (docs/competitor_framework_plan.md §4 ④)
+  ssi:
+    tam: fixed
+    params_json: results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
+    # set from results/tuning/ssi_mpc/best_params.json after tune.py --config tune_ssi_mpc.yaml:
+    ssi_lr: 0.1
+    ssi_kernel_std: 1.0
 
 seeds: [0, 1, 2, 3, 4]

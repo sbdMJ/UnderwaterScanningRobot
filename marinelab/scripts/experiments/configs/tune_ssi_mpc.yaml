@@ -1,0 +1,27 @@
+# §6 unified tuning — SSI-MPC (E1 method ④), same pipeline/budget as tune_bo_nmpc.yaml.
+# Cost weights are INHERITED from the BO result (§6: only the adaptation axis is tuned);
+# run tune_bo_nmpc first. n_rf fixed at the upstream default (100).
+method: ssi_mpc
+task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+tam: fixed
+state: gt
+seed: 0
+sampler_seed: 0
+inherit_weights: results/tuning/bo_nmpc/best_params.json
+
+trials: 100
+steps: 4500
+rescore_top_k: 3
+rescore_steps: 9000
+
+space:
+  lr:
+    size: 1
+    low: 1.0e-4
+    high: 1.0
+    log: true
+  kernel_std:
+    size: 1
+    low: 0.1
+    high: 10.0
+    log: true

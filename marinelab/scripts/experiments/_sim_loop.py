@@ -118,7 +118,20 @@ def build_controller(cell: ExperimentCell, env, cfg):
     if cell.method == "diff":
         return DiffWMPCController(ckpt_path=resolve_path(opt["ckpt"]), **nmpc_kwargs), mpc_cfg
     if cell.method == "ssi":
-        raise SystemExit("ssi: port pending (docs/competitor_framework_plan.md §4 ④)")
+        from marinelab.third_party.ssi_mpc_gpl.ssi_controller import SSIMPCController
+
+        if "params_json" in opt:  # §6: SSI inherits the BO-tuned cost weights
+            nmpc_kwargs["params_json"] = resolve_path(opt["params_json"])
+        ctl = SSIMPCController(
+            step_dt=env.step_dt,
+            ssi_lr=float(opt.get("ssi_lr", 0.1)),
+            ssi_kernel_std=float(opt.get("ssi_kernel_std", 1.0)),
+            ssi_n_rf=int(opt.get("ssi_n_rf", 100)),
+            ssi_seed=int(opt.get("ssi_seed", 0)),
+            **nmpc_kwargs,
+        )
+        ctl.name = "ssi"  # params_json load renames to "bo"; the method identity wins
+        return ctl, mpc_cfg
     raise SystemExit(f"unknown method {cell.method!r}")
 
 

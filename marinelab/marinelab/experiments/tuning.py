@@ -50,6 +50,16 @@ def suggest_params(trial, space: dict) -> dict:
     return out
 
 
+def params_from_trial(trial_params: dict, space: dict) -> dict:
+    """Rebuild the {name: [floats]} dict from a finished trial's flat param map,
+    inverting ``suggest_params``' naming (sized entries get ``_i`` suffixes)."""
+    out = {}
+    for name, spec in space.items():
+        size = int(spec.get("size", 1))
+        out[name] = [trial_params[f"{name}_{i}" if size > 1 else name] for i in range(size)]
+    return out
+
+
 class TuneRecorder:
     """Writes the §6 tuning logs; every trial is recorded, effort totals are accumulated."""
 

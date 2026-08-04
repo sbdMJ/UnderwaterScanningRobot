@@ -57,6 +57,9 @@ class FixedWeightNMPC(WallScanController):
         if self._weights.size != self._mpc.n_pglobal:
             raise ValueError(f"weights length {self._weights.size} != solver's {self._mpc.n_pglobal}")
         self._first = True
+        # Optional per-step world-frame disturbance fed to the OCP's d_world parameter.
+        # None = zeros. Subclasses with online model adaptation (SSI-MPC) set this.
+        self._d_world: np.ndarray | None = None
 
     @property
     def weights(self) -> np.ndarray:
@@ -87,7 +90,7 @@ class FixedWeightNMPC(WallScanController):
              obs: np.ndarray | None = None) -> ControlOutput:
         weights = self._current_weights(state, ref)
         P = self._mpc.param_matrix(ref.as_dict(), theta_anchor=ref.theta_anchor,
-                                   s_anchor=ref.s_anchor)
+                                   s_anchor=ref.s_anchor, d_world=self._d_world)
         t0 = time.perf_counter()
         sol = self._mpc.solve(state.to_x13(), P, weights, want_sensitivity=False,
                               init_state_traj=self._first)
