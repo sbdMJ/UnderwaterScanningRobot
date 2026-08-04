@@ -7,12 +7,19 @@ naming convention ``marinelab.experiments.protocol`` defines. One process, one I
 envs are rebuilt per cell (conditions may change the task). The closed loops themselves
 live in ``_sim_loop.py``, shared with ``tune.py``.
 
+The method is a REQUIRED positional argument — one method per invocation by default,
+because a full config run (5 methods x seeds) is hours of wall-clock. Pass the literal
+``all`` to deliberately run every method sequentially.
+
 Examples::
 
-    ./isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py \\
+    # one method (the default granularity):
+    ./isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py fixed \\
         --config ../marinelab/scripts/experiments/configs/e1_nominal.yaml
-    # one cell only:
-    ... --config .../e1_nominal.yaml --method fixed --seed 0
+    # one cell:
+    ... diff --config .../e1_nominal.yaml --seed 0
+    # everything (explicit opt-in):
+    ... all --config .../e1_nominal.yaml
 """
 from __future__ import annotations
 
@@ -22,8 +29,10 @@ import os
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Competitor experiment runner")
+parser.add_argument("method", type=str,
+                    help="method key from the config's methods: (fixed|bo|ppo|ssi|diff|...), "
+                         "or 'all' to run every method sequentially")
 parser.add_argument("--config", type=str, required=True, help="experiment yaml (see configs/)")
-parser.add_argument("--method", type=str, default=None, help="run only this method")
 parser.add_argument("--cond", type=str, default=None, help="run only this condition")
 parser.add_argument("--seed", type=int, default=None, help="run only this seed")
 parser.add_argument("--results_root", type=str, default=None, help="default: <repo>/results")
@@ -103,10 +112,16 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
 
 
 def main() -> None:
-    cells = load_cells(args_cli.config, only_method=args_cli.method,
+    only_method = None if args_cli.method == "all" else args_cli.method
+    cells = load_cells(args_cli.config, only_method=only_method,
                        only_cond=args_cli.cond, only_seed=args_cli.seed)
     if not cells:
-        raise SystemExit("no cells match the given filters")
+        import yaml
+
+        with open(args_cli.config) as fh:
+            available = list(yaml.safe_load(fh).get("methods", {}))
+        raise SystemExit(f"no cells match method={args_cli.method!r} "
+                         f"(config methods: {available}, or 'all')")
     results_root = os.path.abspath(args_cli.results_root or os.path.join(sl.REPO_ROOT, "results"))
     print(f"[INFO] {len(cells)} cell(s) -> {results_root}")
     for cell in cells:

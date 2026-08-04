@@ -30,16 +30,19 @@ git lfs pull                                          # 메시 없으면 USD 로
 #    끝나면 results/tuning/ssi_mpc/best_params.json의 lr/kernel_std를
 #    e1_nominal.yaml / e2_dr_sweep.yaml / e3_current.yaml의 ssi_lr/ssi_kernel_std에 반영
 
-# ③ E1 본 비교 (5 방법 x 5 seed)
-./docker/run.sh './isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py \
+# ③ E1 본 비교 — 방법 지정이 기본 단위 (전체 실행은 명시적으로 'all')
+./docker/run.sh './isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py fixed \
     --config ../marinelab/scripts/experiments/configs/e1_nominal.yaml'
+...                                                                    diff --config ...
+...                                                                    all  --config ...   # 5방법 순차 (수 시간)
 
 # ④ E2 강건성 스윕 / E3 조류  (E1 상위 방법 확정 후)
-... run_experiment.py --config .../e2_dr_sweep.yaml
-... run_experiment.py --config .../e3_current.yaml
+... run_experiment.py ssi --config .../e2_dr_sweep.yaml
+... run_experiment.py all --config .../e3_current.yaml
 ```
 
-단일 셀만 실행(디버그/재실행): `--method fixed --cond dr50 --seed 0` 필터를 붙인다.
+단일 셀만 실행(디버그/재실행): `run_experiment.py fixed --cond dr50 --seed 0 --config ...`.
+방법별 결과 파일이 독립이라 방법 단위로 나눠 돌려도 집계는 동일하다.
 `tune.py`는 SQLite storage 기반이라 중단 후 같은 커맨드로 재개된다.
 
 ## 결과 저장 위치
