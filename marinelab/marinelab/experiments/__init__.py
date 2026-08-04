@@ -12,6 +12,8 @@ import importlib
 _LAZY = {
     "ExperimentCell": ".protocol",
     "load_cells": ".protocol",
+    "CurrentDriver": ".env_variants",
+    "apply_fluid_dr_scale": ".env_variants",
     "ScoreAccumulator": ".scoring",
     "step_losses": ".scoring",
     "TuneRecorder": ".tuning",

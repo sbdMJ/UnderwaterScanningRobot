@@ -39,6 +39,7 @@ from marinelab.control import (
     WallFrameStateEstimator,
 )
 from marinelab.control.types import ScanReference
+from marinelab.experiments.env_variants import CurrentDriver, apply_fluid_dr_scale
 from marinelab.experiments.protocol import ExperimentCell
 from marinelab.experiments.scoring import ScoreAccumulator
 from marinelab.tasks.pkrc_wallscan import eval_metrics as em
@@ -87,6 +88,8 @@ def build_env(cell: ExperimentCell):
         cfg.hydrodynamics = PKRCHydrodynamicsCfgZSlender()
     elif hydro == "shipped":
         cfg.hydrodynamics = PKRCHydrodynamicsCfg()
+    if "dr_fluid_scale" in opt:  # E2 sweep: rescale the fluid-coefficient DR half-range
+        apply_fluid_dr_scale(cfg, float(opt["dr_fluid_scale"]))
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 
@@ -264,6 +267,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     env.reset()
     env.episode_length_buf[:] = 0  # own the whole window (see run_wallscan_mpc / CLAUDE.md)
     reset_internal()
+    current = CurrentDriver.from_options(opt, env)  # E3: None unless the cell asks for it
 
     log = em.TrajectoryLog()
     action = torch.zeros(1, 6, device=dev)
@@ -272,6 +276,8 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
         if not sim_app.is_running():
             print(f"[WARN] app closed early at {i}/{steps}")
             break
+        if current is not None:
+            current.apply(i * dt)
         pos, quat, yaw = gt_pose()
         theta = torch.atan2(pos[:, 1], pos[:, 0])
         s_gt += mref._wrap_to_pi(theta - theta_prev) * cfg.tank_radius
@@ -357,6 +363,7 @@ def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     dev, dt = env.device, env.step_dt
     obs_dict, _ = env.reset()
     env.episode_length_buf[:] = 0  # same protocol as the MPC path: full-length first episode
+    current = CurrentDriver.from_options(cell.options, env)  # E3
     log = em.TrajectoryLog()
     n = env.num_envs
     action = torch.zeros(n, 6, device=dev)
@@ -365,6 +372,8 @@ def run_ppo_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
         if not sim_app.is_running():
             print(f"[WARN] app closed early at {i}/{steps}")
             break
+        if current is not None:
+            current.apply(i * dt)
         obs = obs_dict["policy"].cpu().numpy()
         for e in range(n):
             action[e] = torch.as_tensor(ctl.step(None, None, obs[e]).u_cmd,
