@@ -26,7 +26,7 @@ conditions:
   lr04: {ssi_lr: 0.4}
   lr10: {ssi_lr: 1.0}
   # --- n_rf sweep at fixed lr (their Fig. 4b: M sweep at eta=0.4) ---
-  # fix lr to the tuned value from results/tuning/ssi_mpc before running this family
+  # fix lr to the tuned value from experimental_results/tuning/ssi_mpc before running this family
   m25: {ssi_n_rf: 25, ssi_lr: 0.1}
   m50: {ssi_n_rf: 50, ssi_lr: 0.1}
   m100: {ssi_n_rf: 100, ssi_lr: 0.1}
@@ -35,7 +35,7 @@ conditions:
 
 methods:
   ssi:
-    params_json: results/tuning/bo_nmpc/best_params.json
-    ssi_kernel_std: 1.0   # <- results/tuning/ssi_mpc/best_params.json
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_kernel_std: 1.0   # <- experimental_results/tuning/ssi_mpc/best_params.json
 
 seeds: [0, 1, 2, 3, 4]

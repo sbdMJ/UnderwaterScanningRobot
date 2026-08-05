@@ -7,7 +7,7 @@ tam: fixed
 state: gt
 seed: 0
 sampler_seed: 0
-inherit_weights: results/tuning/bo_nmpc/best_params.json
+inherit_weights: experimental_results/tuning/bo_nmpc/best_params.json
 
 trials: 100
 steps: 4500

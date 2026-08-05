@@ -18,7 +18,7 @@ methods:
     tam: fixed
   bo:
     tam: fixed
-    params_json: results/tuning/bo_nmpc/best_params.json   # produced by tune.py (P2)
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json   # produced by tune.py (P2)
   diff:
     tam: fixed
     ckpt: checkpoints/diff_wmpc/policy_final.pt
@@ -27,8 +27,8 @@ methods:
     policy: checkpoints/exported/policy.pt   # written by play.py on checkpoint load
   ssi:
     tam: fixed
-    params_json: results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
-    # set from results/tuning/ssi_mpc/best_params.json after tune.py --config tune_ssi_mpc.yaml:
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
+    # set from experimental_results/tuning/ssi_mpc/best_params.json after tune.py --config tune_ssi_mpc.yaml:
     ssi_lr: 0.1
     ssi_kernel_std: 1.0
 

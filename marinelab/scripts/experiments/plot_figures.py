@@ -3,12 +3,12 @@
 
 Examples::
 
-    python plot_figures.py f1 ../../results/e1
-    python plot_figures.py f2 ../../results/e1 --cond nominal --seed 0
-    python plot_figures.py f3 ../../results/e2 --metric score.objective
-    python plot_figures.py f4 ../../results/e3 --cond step --seed 0 --t-event 90
-    python plot_figures.py f5 ../../results/e2 ../../results/e2b --names zero-shot fine-tuned
-    python plot_figures.py f6 ../../results/e1 --tuning ../../results/tuning
+    python plot_figures.py f1 ../../experimental_results/e1
+    python plot_figures.py f2 ../../experimental_results/e1 --cond nominal --seed 0
+    python plot_figures.py f3 ../../experimental_results/e2 --metric score.objective
+    python plot_figures.py f4 ../../experimental_results/e3 --cond step --seed 0 --t-event 90
+    python plot_figures.py f5 ../../experimental_results/e2 ../../experimental_results/e2b --names zero-shot fine-tuned
+    python plot_figures.py f6 ../../experimental_results/e1 --tuning ../../experimental_results/tuning
 """
 from __future__ import annotations
 

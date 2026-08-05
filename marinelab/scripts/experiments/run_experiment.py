@@ -35,7 +35,8 @@ parser.add_argument("method", type=str,
 parser.add_argument("--config", type=str, required=True, help="experiment yaml (see configs/)")
 parser.add_argument("--cond", type=str, default=None, help="run only this condition")
 parser.add_argument("--seed", type=int, default=None, help="run only this seed")
-parser.add_argument("--results_root", type=str, default=None, help="default: <repo>/results")
+parser.add_argument("--results_root", type=str, default=None,
+                    help="default: <repo>/experimental_results (legacy results/ is untouched)")
 parser.add_argument("--log_every", type=int, default=500)
 parser.add_argument("--no_plot", action="store_true", default=False)
 AppLauncher.add_app_launcher_args(parser)
@@ -125,7 +126,8 @@ def main() -> None:
             available = list(yaml.safe_load(fh).get("methods", {}))
         raise SystemExit(f"no cells match method={args_cli.method!r} "
                          f"(config methods: {available}, or 'all')")
-    results_root = os.path.abspath(args_cli.results_root or os.path.join(sl.REPO_ROOT, "results"))
+    results_root = os.path.abspath(args_cli.results_root
+                                   or os.path.join(sl.REPO_ROOT, "experimental_results"))
     print(f"[INFO] {len(cells)} cell(s) -> {results_root}")
     for cell in cells:
         run_cell(cell, results_root)

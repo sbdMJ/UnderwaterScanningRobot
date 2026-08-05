@@ -8,13 +8,14 @@ so a method can pin its own artifacts (checkpoint paths) regardless of condition
 
 Directory convention — one experiment dir, one subdirectory per artifact kind::
 
-    results/<exp>/raw/      trajectory_<method>_<cond>_s<seed>.npz   (rescore-compatible)
-    results/<exp>/metrics/  metrics_<method>_<cond>_s<seed>.json
-    results/<exp>/plots/    trajectory_<method>_<cond>_s<seed>.png   (per-cell diagnostics)
-    results/<exp>/tables/   table.csv / table.tex                    (aggregate.py)
-    results/<exp>/figures/  fig_f1..f6                               (plot_figures.py)
+    experimental_results/<exp>/raw/      trajectory_<method>_<cond>_s<seed>.npz
+    experimental_results/<exp>/metrics/  metrics_<method>_<cond>_s<seed>.json
+    experimental_results/<exp>/plots/    trajectory_<method>_<cond>_s<seed>.png
+    experimental_results/<exp>/tables/   table.csv / table.tex   (aggregate.py)
+    experimental_results/<exp>/figures/  fig_f1..f6              (plot_figures.py)
 
-Legacy flat files written by run_wallscan_mpc.py / play.py stay at the results/ root.
+The legacy ``results/`` directory belongs to the pre-framework scripts
+(run_wallscan_mpc.py / play.py) and is never read or written by this framework.
 """
 from __future__ import annotations
 

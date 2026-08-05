@@ -26,7 +26,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Unified baseline tuning (BO-static / SSI-MPC)")
 parser.add_argument("--config", type=str, required=True, help="tuning yaml (see configs/)")
 parser.add_argument("--out_root", type=str, default=None,
-                    help="default: <repo>/results/tuning/<method>")
+                    help="default: <repo>/experimental_results/tuning/<method>")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -57,7 +57,7 @@ def main() -> None:
         raise SystemExit(f"unknown tuning method {method!r}")
 
     out_dir = os.path.abspath(args_cli.out_root or os.path.join(
-        sl.REPO_ROOT, "results", "tuning", method))
+        sl.REPO_ROOT, "experimental_results", "tuning", method))
     recorder = TuneRecorder(out_dir)
 
     # One env + one solver build for the whole study (weights are per-solve parameters;

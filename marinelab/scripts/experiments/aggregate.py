@@ -1,7 +1,7 @@
 # Copyright (c) 2026. SPDX-License-Identifier: BSD-3-Clause
 """CLI for ``marinelab.experiments.aggregate``: results dir -> paper-table csv.
 
-Runs natively (no Isaac): ``python aggregate.py ../results/e1 --out table_e1.csv``.
+Runs natively (no Isaac): ``python aggregate.py ../../experimental_results/e1``.
 Default metric set covers the Table 1 columns (scan quality + tracking + cost); pass
 ``--metrics`` with dotted paths to override.
 """
@@ -39,7 +39,7 @@ DEFAULT_METRICS = [
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aggregate experiment metrics into a table")
-    parser.add_argument("results_dir", help="e.g. ../../results/e1")
+    parser.add_argument("results_dir", help="e.g. ../../experimental_results/e1")
     parser.add_argument("--metrics", nargs="+", default=DEFAULT_METRICS,
                         help="dotted metric paths inside metrics_*.json")
     parser.add_argument("--out", default=None, help="output csv (default: <results_dir>/table.csv)")

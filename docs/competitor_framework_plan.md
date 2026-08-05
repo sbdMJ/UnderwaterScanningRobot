@@ -1,4 +1,4 @@
-# Competitor/Baseline 실험 프레임워크 구현 계획
+﻿# Competitor/Baseline 실험 프레임워크 구현 계획
 
 **목적**: `experiments_plan.md`의 E1–E4를 "방법 × 조건 × seed" 조합으로 반복 실행할 수 있는
 구조를 repo에 추가한다. E5(하드웨어)로의 이식이 쉬운 형태로 컨트롤러 계층을 설계한다.
@@ -54,7 +54,7 @@ marinelab/scripts/experiments/            # [NEW] 실험 실행 계층 (sim 전�
     run_experiment.py   # 단일 진입점: --config <yaml> [--method ... --cond ... --seed ...]
     env_variants.py     # E2/E3용 파생 env cfg + 신규 gym ID 등록 (기존 __init__.py 무수정)
     tune.py             # ②④ 공용 자동 튜닝 파이프라인 (Optuna) — §6 프로토콜
-    aggregate.py        # results/<exp>/ 수집 → mean±SD + per-trial 오버레이 표·그림 + E4(b) 비용표
+    aggregate.py        # experimental_results/<exp>/ 수집 → mean±SD + per-trial 오버레이 표·그림 + E4(b) 비용표
     bench_inference.py  # E4(c): solve+forward 마이크로벤치, isaaclab 무의존 (Jetson에서 그대로 실행)
     configs/
         e1_nominal.yaml e2_dr_sweep.yaml e2_finetune.yaml e3_current.yaml e4_ablation.yaml
@@ -146,7 +146,7 @@ class WallScanController(ABC):
 - acados는 순차 solve이므로 MPC 계열은 env 1개 × (8 trial × 5 seed) 루프,
   PPO는 8 env 병렬 — **trial 수(40)와 에피소드 길이(180 s)를 맞추는 것**이 프로토콜의 불변량.
   `--eval_steps`/`--score_episode` 규약은 기존 CLAUDE.md 함정(첫 에피소드 절반 길이)을 따른다.
-- 출력 규약: `results/<exp>/<method>_<cond>_s<seed>.{npz,json}` — 기존 `eval_metrics`/
+- 출력 규약: `experimental_results/<exp>/<method>_<cond>_s<seed>.{npz,json}` — 기존 `eval_metrics`/
   `rescore_trajectories.py` 포맷을 그대로 사용해 재채점 호환 유지.
 - `aggregate.py`: 위 규약을 스캔해 Table 1/2/3 (csv+latex)과 Fig(성능 vs 섭동 강도 곡선,
   zero-shot/fine-tuned 막대)를 생성. **mean±SD + per-trial 점 오버레이** (min/max 막대 금지
@@ -181,7 +181,7 @@ tune.py --method {bo_nmpc, ssi_mpc} --config configs/tune_<method>.yaml
 
 ### 튜닝 로그 (trial마다 자동 기록)
 
-`results/tuning/<method>/`:
+`experimental_results/tuning/<method>/`:
 
 | 파일 | 내용 |
 |---|---|
@@ -232,15 +232,15 @@ torch만 있으면 된다 (현재 이 PC의 Python 3.13에는 torch 미설치 �
 ## 10. 그림(Figure) 계획 — 일반 비교 그림만 (2026-08-04 확정)
 
 방법 특화 그림은 강조할 컨트리뷰션이 확정될 때까지 보류하고, 어떤 강조 방향에서도
-유효한 **일반 비교 그림**만 기본 플랜으로 한다. 전부 `results/` 산출물에서 자동 생성
+유효한 **일반 비교 그림**만 기본 플랜으로 한다. 전부 `experimental_results/` 산출물에서 자동 생성
 가능한 것들이며, 추가 로깅이 필요 없다.
 
 | # | Figure | 내용 | 데이터 소스 | 대응 실험 |
 |---|---|---|---|---|
 | F1 | 본 비교 통계 | 방법별 mean±SD + **per-trial 점 오버레이** (min/max 막대 금지) | `table.csv` values 열 | E1 |
 | F2 | 대표 궤적 | 벽면 전개도(s–z 평면) 스캔 경로 vs 레퍼런스, 방법별 | `trajectory_*.npz` | E1 |
-| F3 | 강건성 곡선 | 성능 vs 섭동 강도(±25/50/75%), 방법별 라인+에러바+점 | `results/e2/metrics_*.json` | E2(a) |
-| F4 | 외란 응답 시계열 | 추종오차·기울기 vs 시간, 조류 급전환 시점 수직선, 방법별 | `results/e3/trajectory_*.npz` | E3 |
+| F3 | 강건성 곡선 | 성능 vs 섭동 강도(±25/50/75%), 방법별 라인+에러바+점 | `experimental_results/e2/metrics_*.json` | E2(a) |
+| F4 | 외란 응답 시계열 | 추종오차·기울기 vs 시간, 조류 급전환 시점 수직선, 방법별 | `experimental_results/e3/trajectory_*.npz` | E3 |
 | F5 | zero-shot vs fine-tuned | 막대 비교 (fine-tune은 제안 방법만) | E2(b) 실행 후 metrics | E2(b) |
 | F6 | 비용 비교 | 학습/튜닝/추론 비용 (E4b·c 표의 그림판) | `budget.json` + `controller_cost` + W&B | E4(b,c) |
 

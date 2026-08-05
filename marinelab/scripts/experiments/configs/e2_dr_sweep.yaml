@@ -23,8 +23,8 @@ methods:
     tam: fixed
   ssi:
     tam: fixed
-    params_json: results/tuning/bo_nmpc/best_params.json
-    ssi_lr: 0.1          # <- results/tuning/ssi_mpc/best_params.json
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.1          # <- experimental_results/tuning/ssi_mpc/best_params.json
     ssi_kernel_std: 1.0
   diff:
     tam: fixed
