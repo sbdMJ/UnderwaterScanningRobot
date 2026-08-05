@@ -34,6 +34,14 @@ def test_flatten_nested():
     assert flatten({"a": {"b": 1}, "c": [1, 2]}) == {"a.b": 1, "c": [1, 2]}
 
 
+def test_collect_descends_into_metrics_subdir(tmp_path):
+    sub = tmp_path / "metrics"
+    sub.mkdir()
+    _write_metrics(sub, "diff", "nominal", 0, 2.0, 1.0)
+    rows = collect(str(tmp_path))  # experiment dir, not the metrics dir itself
+    assert len(rows) == 1 and rows[0]["method"] == "diff"
+
+
 def test_collect_parses_tags(results):
     rows = collect(str(results))
     assert len(rows) == 4

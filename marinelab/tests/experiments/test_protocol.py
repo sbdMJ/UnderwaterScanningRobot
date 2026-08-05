@@ -58,8 +58,10 @@ def test_filters(config):
 
 def test_paths():
     cell = ExperimentCell(exp="e1", method="diff", cond="nominal", seed=3)
-    assert cell.trajectory_path("results").as_posix() == "results/e1/trajectory_diff_nominal_s3.npz"
-    assert cell.metrics_path("results").name == "metrics_diff_nominal_s3.json"
+    assert cell.trajectory_path("results").as_posix() == "results/e1/raw/trajectory_diff_nominal_s3.npz"
+    assert cell.metrics_path("results").as_posix() == "results/e1/metrics/metrics_diff_nominal_s3.json"
+    assert cell.plot_path("results").as_posix() == "results/e1/plots/trajectory_diff_nominal_s3.png"
+    assert cell.out_dir("results", "tables").as_posix() == "results/e1/tables"
 
 
 def test_missing_key_rejected(tmp_path):

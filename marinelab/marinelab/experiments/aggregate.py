@@ -34,9 +34,16 @@ def flatten(d: dict, prefix: str = "") -> dict:
 
 
 def collect(results_dir: str) -> list[dict]:
-    """One flat row per metrics json, tagged with method/cond/seed parsed from the name."""
+    """One flat row per metrics json, tagged with method/cond/seed parsed from the name.
+
+    Accepts either the experiment dir (descends into its ``metrics/`` subdirectory) or
+    a directory that holds the json files directly (legacy/flat layouts).
+    """
+    d = Path(results_dir)
+    if (d / "metrics").is_dir():
+        d = d / "metrics"
     rows = []
-    for path in sorted(Path(results_dir).glob("metrics_*.json")):
+    for path in sorted(d.glob("metrics_*.json")):
         m = _METRICS_RE.match(path.name)
         if m is None:
             continue

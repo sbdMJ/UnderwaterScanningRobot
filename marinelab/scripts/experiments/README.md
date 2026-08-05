@@ -52,17 +52,21 @@ git lfs pull                                          # 메시 없으면 USD 로
 
 ```
 results/
-├── e1/                                   # exp 이름 (yaml의 exp: 키)
-│   ├── trajectory_<method>_<cond>_s<seed>.npz   # raw 궤적 (전 스텝, 전 env)
-│   ├── trajectory_<method>_<cond>_s<seed>.png   # 궤적 플롯
-│   ├── metrics_<method>_<cond>_s<seed>.json     # 지표 + score.objective + controller_cost
-│   ├── table.csv                          # aggregate 산출 (mean/sd/per-trial 값)
-│   └── table.tex                          # aggregate 산출 (논문용 booktabs)
+├── e1/                                   # exp 이름 (yaml의 exp: 키), 종류별 서브디렉토리
+│   ├── raw/      trajectory_<method>_<cond>_s<seed>.npz   # raw 궤적 (전 스텝, 전 env)
+│   ├── metrics/  metrics_<method>_<cond>_s<seed>.json     # 지표 + score + controller_cost
+│   ├── plots/    trajectory_<method>_<cond>_s<seed>.png   # 셀별 진단 플롯
+│   ├── tables/   table.csv, table.tex                     # aggregate.py 산출
+│   └── figures/  fig_f1..f6.{png,pdf}                     # plot_figures.py 산출
 ├── e2/  e3/  ...                          # 동일 규약
-└── tuning/
-    ├── bo_nmpc/   {study.db, trials.csv, best_params.json, budget.json}
-    └── ssi_mpc/   {study.db, trials.csv, best_params.json, budget.json}
+├── tuning/
+│   ├── bo_nmpc/   {study.db, trials.csv, best_params.json, budget.json}
+│   └── ssi_mpc/   {study.db, trials.csv, best_params.json, budget.json}
+└── (루트의 flat 파일들)                    # 기존 run_wallscan_mpc.py/play.py 산출물 — 그대로 둠
 ```
+
+`aggregate.py`/`plot_figures.py`에는 실험 디렉토리(`results/e1`)만 주면 서브디렉토리를
+자동 인식한다 (flat 디렉토리도 하위호환).
 
 - **최신 실행이 곧 현재 상태**: 같은 (방법, 조건, seed) 셀을 재실행하면 동일 파일명을
   덮어쓴다. 버전 이력이 필요하면 커밋으로 남긴다 (`results/`는 git 추적 중).

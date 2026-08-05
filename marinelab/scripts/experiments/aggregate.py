@@ -52,7 +52,9 @@ def main() -> None:
     if missing:
         print(f"[WARN] metrics never seen in any row (check key paths): {missing}")
     summary = summarize(rows, args.metrics)
-    out = args.out or os.path.join(args.results_dir, "table.csv")
+    structured = os.path.isdir(os.path.join(args.results_dir, "metrics"))
+    default_out = os.path.join(args.results_dir, "tables" if structured else "", "table.csv")
+    out = args.out or default_out
     write_table_csv(summary, args.metrics, out)
     tex = os.path.splitext(out)[0] + ".tex"
     write_table_tex(summary, args.metrics, tex)

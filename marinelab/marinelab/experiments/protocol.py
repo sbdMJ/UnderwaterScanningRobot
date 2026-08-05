@@ -6,8 +6,15 @@ runner executes and the aggregator groups by. Merge precedence for cell options 
 ``defaults < condition < method`` (a method override wins over a condition default), chosen
 so a method can pin its own artifacts (checkpoint paths) regardless of condition.
 
-Naming convention (compatible with ``rescore_trajectories.py``):
-``results/<exp>/trajectory_<method>_<cond>_s<seed>.npz`` and ``metrics_<same>.json``.
+Directory convention — one experiment dir, one subdirectory per artifact kind::
+
+    results/<exp>/raw/      trajectory_<method>_<cond>_s<seed>.npz   (rescore-compatible)
+    results/<exp>/metrics/  metrics_<method>_<cond>_s<seed>.json
+    results/<exp>/plots/    trajectory_<method>_<cond>_s<seed>.png   (per-cell diagnostics)
+    results/<exp>/tables/   table.csv / table.tex                    (aggregate.py)
+    results/<exp>/figures/  fig_f1..f6                               (plot_figures.py)
+
+Legacy flat files written by run_wallscan_mpc.py / play.py stay at the results/ root.
 """
 from __future__ import annotations
 
@@ -27,14 +34,18 @@ class ExperimentCell:
     def tag(self) -> str:
         return f"{self.method}_{self.cond}_s{self.seed}"
 
-    def out_dir(self, results_root: str) -> Path:
-        return Path(results_root) / self.exp
+    def out_dir(self, results_root: str, kind: str = "") -> Path:
+        base = Path(results_root) / self.exp
+        return base / kind if kind else base
 
     def trajectory_path(self, results_root: str) -> Path:
-        return self.out_dir(results_root) / f"trajectory_{self.tag}.npz"
+        return self.out_dir(results_root, "raw") / f"trajectory_{self.tag}.npz"
 
     def metrics_path(self, results_root: str) -> Path:
-        return self.out_dir(results_root) / f"metrics_{self.tag}.json"
+        return self.out_dir(results_root, "metrics") / f"metrics_{self.tag}.json"
+
+    def plot_path(self, results_root: str) -> Path:
+        return self.out_dir(results_root, "plots") / f"trajectory_{self.tag}.png"
 
 
 def _merged(*layers: dict) -> dict:

@@ -37,23 +37,31 @@ def _summary(results_dir: str, metrics: list[str]):
 
 
 def _cases(results_dir: str, cond: str, seed: int, with_metrics: bool):
-    """One (label, npz[, metrics]) per method found for the given condition/seed."""
+    """One (label, npz[, metrics]) per method found for the given condition/seed.
+
+    Looks in the structured layout (<exp>/raw + <exp>/metrics) first, falling back to a
+    flat directory for legacy/synthetic data.
+    """
+    raw_dir = os.path.join(results_dir, "raw")
+    raw_dir = raw_dir if os.path.isdir(raw_dir) else results_dir
+    metrics_dir = os.path.join(results_dir, "metrics")
+    metrics_dir = metrics_dir if os.path.isdir(metrics_dir) else results_dir
     pat = re.compile(rf"^trajectory_([^_]+)_{re.escape(cond)}_s{seed}\.npz$")
     found = []
-    for name in sorted(os.listdir(results_dir)):
+    for name in sorted(os.listdir(raw_dir)):
         m = pat.match(name)
         if not m:
             continue
         method = m.group(1)
         label = METHOD_LABELS.get(method, method)
-        npz = os.path.join(results_dir, name)
+        npz = os.path.join(raw_dir, name)
         if with_metrics:
             found.append((method, label, npz, os.path.join(
-                results_dir, f"metrics_{method}_{cond}_s{seed}.json")))
+                metrics_dir, f"metrics_{method}_{cond}_s{seed}.json")))
         else:
             found.append((method, label, npz))
     if not found:
-        raise SystemExit(f"no trajectory_*_{cond}_s{seed}.npz under {results_dir}")
+        raise SystemExit(f"no trajectory_*_{cond}_s{seed}.npz under {raw_dir}")
     found.sort(key=lambda c: _method_key(c[0]))
     return [tuple(c[1:]) for c in found]
 
@@ -73,7 +81,8 @@ def main() -> None:
     args = p.parse_args()
 
     root = args.results[0]
-    out = args.out or os.path.join(root, f"fig_{args.fig}")
+    structured = os.path.isdir(os.path.join(root, "metrics"))
+    out = args.out or os.path.join(root, "figures" if structured else "", f"fig_{args.fig}")
     if args.fig == "f1":
         paths = F.fig_overlay(_summary(root, args.metrics), args.metrics, out, cond=args.cond)
     elif args.fig == "f2":

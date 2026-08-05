@@ -92,10 +92,13 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
                                   ("objective", "collided", "scored_losses")}})
         metrics.update(result["extras"])
 
-        out_dir = cell.out_dir(results_root)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(cell.trajectory_path(results_root), **traj)
-        with open(cell.metrics_path(results_root), "w") as fh:
+        traj_path = cell.trajectory_path(results_root)
+        metrics_path = cell.metrics_path(results_root)
+        plot_path = cell.plot_path(results_root)
+        for p in (traj_path, metrics_path, plot_path):
+            p.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(traj_path, **traj)
+        with open(metrics_path, "w") as fh:
             json.dump(metrics, fh, indent=2)
         print(em.format_metrics(metrics))
         cost = metrics["controller_cost"]
@@ -104,7 +107,7 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
         print(f"[COST] {cost['solve_ms_mean']:.2f} ms/step (p95 {cost['solve_ms_p95']:.2f})  "
               f"fail {100 * cost['fail_frac']:.2f}%  sat {100 * cost['saturated_frac']:.2f}%")
         if not args_cli.no_plot:
-            em.plot_trajectory(traj, str(out_dir / f"trajectory_{cell.tag}.png"),
+            em.plot_trajectory(traj, str(plot_path),
                                episode=None if score_episode < 0 else score_episode,
                                title=f"{cell.method} [{cell.tag}]")
     finally:
