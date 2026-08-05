@@ -20,7 +20,7 @@ REQUIRED_KEYS = ("method", "trials", "steps", "space")
 def load_tune_config(path: str) -> dict:
     import yaml
 
-    with open(path) as fh:
+    with open(path, encoding="utf-8") as fh:  # configs carry UTF-8 comments
         cfg = yaml.safe_load(fh)
     for key in REQUIRED_KEYS:
         if key not in cfg:

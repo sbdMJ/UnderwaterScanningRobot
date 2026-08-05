@@ -118,7 +118,7 @@ def main() -> None:
     if not cells:
         import yaml
 
-        with open(args_cli.config) as fh:
+        with open(args_cli.config, encoding="utf-8") as fh:
             available = list(yaml.safe_load(fh).get("methods", {}))
         raise SystemExit(f"no cells match method={args_cli.method!r} "
                          f"(config methods: {available}, or 'all')")

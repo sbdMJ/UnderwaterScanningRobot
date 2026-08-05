@@ -23,7 +23,7 @@ import conftest  # noqa: F401,E402  (installs the isaaclab/marinelab shims)
 
 from marinelab.experiments import figures as F  # noqa: E402
 from marinelab.experiments.aggregate import (  # noqa: E402
-    _method_key, collect, collect_budgets, summarize,
+    METHOD_LABELS, _method_key, collect, collect_budgets, summarize,
 )
 
 DEFAULT_F1_METRICS = ["score.objective", "cycles_mean", "wall_dist_err_cm", "crab_deg"]
@@ -45,15 +45,17 @@ def _cases(results_dir: str, cond: str, seed: int, with_metrics: bool):
         if not m:
             continue
         method = m.group(1)
+        label = METHOD_LABELS.get(method, method)
         npz = os.path.join(results_dir, name)
         if with_metrics:
-            found.append((method, npz, os.path.join(
+            found.append((method, label, npz, os.path.join(
                 results_dir, f"metrics_{method}_{cond}_s{seed}.json")))
         else:
-            found.append((method, npz))
+            found.append((method, label, npz))
     if not found:
         raise SystemExit(f"no trajectory_*_{cond}_s{seed}.npz under {results_dir}")
-    return sorted(found, key=lambda c: _method_key(c[0]))
+    found.sort(key=lambda c: _method_key(c[0]))
+    return [tuple(c[1:]) for c in found]
 
 
 def main() -> None:

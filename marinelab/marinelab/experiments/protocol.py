@@ -49,7 +49,7 @@ def load_cells(config_path: str, *, only_method: str | None = None,
     """Expand a yaml experiment config into the full method x condition x seed matrix."""
     import yaml
 
-    with open(config_path) as fh:
+    with open(config_path, encoding="utf-8") as fh:  # configs carry UTF-8 comments
         cfg = yaml.safe_load(fh)
     for key in ("exp", "methods", "conditions", "seeds"):
         if key not in cfg:
