@@ -19,7 +19,7 @@ conditions:
   dr75: {dr_fluid_scale: 0.75}
 
 methods:
-  fixed:
+  nominal:
     tam: fixed
   ssi:
     tam: fixed

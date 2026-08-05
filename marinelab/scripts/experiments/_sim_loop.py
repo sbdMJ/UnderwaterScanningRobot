@@ -63,7 +63,7 @@ TASK_CFGS = {
     "Isaac-PKRC-WallScan-Eval-Direct-v0": WallScanEvalCfg,
 }
 
-MPC_METHODS = ("fixed", "bo", "diff", "ssi")
+MPC_METHODS = ("nominal", "bo", "diff", "ssi")
 
 
 def resolve_path(path: str) -> str:
@@ -114,7 +114,7 @@ def build_controller(cell: ExperimentCell, env, cfg):
         rti_iters=int(opt.get("rti_iters", 8)),
         code_export_root=os.path.join(REPO_ROOT, "isaaclab", "logs", "c_generated_code_wallscan"),
     )
-    if cell.method == "fixed":
+    if cell.method == "nominal":
         return FixedWeightNMPC(**nmpc_kwargs), mpc_cfg
     if cell.method == "bo":
         return FixedWeightNMPC(params_json=resolve_path(opt["params_json"]), **nmpc_kwargs), mpc_cfg

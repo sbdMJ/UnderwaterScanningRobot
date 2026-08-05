@@ -27,7 +27,7 @@ def load_weight_params(path: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 class FixedWeightNMPC(WallScanController):
-    name = "fixed"
+    name = "nominal"  # method key of baseline ① (SSI-MPC paper's "Nominal MPC" convention)
 
     def __init__(self, *, mpc=None, plant=None, mpc_cfg=None, horizon: int = 30,
                  rti_iters: int = 8, code_export_root: str | None = None,

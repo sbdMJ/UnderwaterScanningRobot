@@ -19,7 +19,7 @@ conditions:
     current: {type: sine, speed: 0.15, heading_deg: 0.0, period: 30.0}
 
 methods:
-  fixed: {}
+  nominal: {}
   ssi:
     params_json: results/tuning/bo_nmpc/best_params.json
     ssi_lr: 0.1          # <- results/tuning/ssi_mpc/best_params.json

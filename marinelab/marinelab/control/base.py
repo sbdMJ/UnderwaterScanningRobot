@@ -55,7 +55,7 @@ class ControllerStats:
 class WallScanController(ABC):
     """One scan-control method (Fixed-W NMPC, BO NMPC, PPO, SSI-MPC, Diff-WMPC, ...)."""
 
-    #: short method key used in result filenames and tables ("fixed", "bo", "ppo", ...)
+    #: short method key used in result filenames and tables ("nominal", "bo", "ppo", ...)
     name: str = "base"
 
     def __init__(self) -> None:

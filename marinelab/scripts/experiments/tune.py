@@ -73,7 +73,7 @@ def main() -> None:
     }
     if method == "ssi_mpc" and tcfg.get("inherit_weights"):
         options["params_json"] = tcfg["inherit_weights"]  # §6: SSI starts from BO weights
-    cell = ExperimentCell(exp="tuning", method="ssi" if method == "ssi_mpc" else "fixed",
+    cell = ExperimentCell(exp="tuning", method="ssi" if method == "ssi_mpc" else "nominal",
                           cond=method, seed=int(tcfg.get("seed", 0)), options=options)
     env, cfg = sl.build_env(cell)
     ctl, mpc_cfg = sl.build_controller(cell, env, cfg)

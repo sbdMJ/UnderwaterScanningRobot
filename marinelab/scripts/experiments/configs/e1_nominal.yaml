@@ -14,7 +14,7 @@ conditions:
   nominal: {}
 
 methods:
-  fixed:
+  nominal:
     tam: fixed
   bo:
     tam: fixed

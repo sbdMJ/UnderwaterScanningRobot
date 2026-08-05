@@ -141,7 +141,7 @@ class WallScanController(ABC):
 ## 5. 실험 러너와 프로토콜
 
 - `run_experiment.py` 한 개가 E1/E2/E3/E4(a)를 전부 커버한다:
-  `방법(--method fixed|bo|ppo|ssi|diff)` × `조건(--cond, env variant/상태소스/외란 프로파일)`
+  `방법(nominal|bo|ppo|ssi|diff — 위치 인자, 전체 실행은 'all')` × `조건(--cond, env variant/상태소스/외란 프로파일)`
   × `--seed`. yaml이 셀 목록을 정의하고, CLI는 단일 셀 오버라이드용.
 - acados는 순차 solve이므로 MPC 계열은 env 1개 × (8 trial × 5 seed) 루프,
   PPO는 8 env 병렬 — **trial 수(40)와 에피소드 길이(180 s)를 맞추는 것**이 프로토콜의 불변량.

@@ -83,8 +83,8 @@ def write_table_csv(summary: dict, metrics: list[str], path: str) -> None:
                             entry["n_trials"], ";".join(f"{v:.6g}" for v in s["values"])])
 
 
-METHOD_ORDER = ("fixed", "bo", "ppo", "ssi", "diff")
-METHOD_LABELS = {"fixed": "Fixed-W NMPC", "bo": "BO-tuned NMPC", "ppo": "PPO",
+METHOD_ORDER = ("nominal", "bo", "ppo", "ssi", "diff")
+METHOD_LABELS = {"nominal": "Nominal NMPC", "bo": "BO-tuned NMPC", "ppo": "PPO",
                  "ssi": "SSI-MPC", "diff": "Diff-WMPC (ours)"}
 
 

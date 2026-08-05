@@ -14,7 +14,7 @@ because a full config run (5 methods x seeds) is hours of wall-clock. Pass the l
 Examples::
 
     # one method (the default granularity):
-    ./isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py fixed \\
+    ./isaaclab.sh -p ../marinelab/scripts/experiments/run_experiment.py nominal \\
         --config ../marinelab/scripts/experiments/configs/e1_nominal.yaml
     # one cell:
     ... diff --config .../e1_nominal.yaml --seed 0
@@ -30,7 +30,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Competitor experiment runner")
 parser.add_argument("method", type=str,
-                    help="method key from the config's methods: (fixed|bo|ppo|ssi|diff|...), "
+                    help="method key from the config's methods: (nominal|bo|ppo|ssi|diff|...), "
                          "or 'all' to run every method sequentially")
 parser.add_argument("--config", type=str, required=True, help="experiment yaml (see configs/)")
 parser.add_argument("--cond", type=str, default=None, help="run only this condition")

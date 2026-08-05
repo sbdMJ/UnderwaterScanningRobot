@@ -16,7 +16,7 @@ def _stat(mean, sd=0.1, values=None):
 def _summary(metric="score.objective", conds=("nominal",)):
     out = {}
     for c in conds:
-        out[("fixed", c)] = {"n_trials": 3, metric: _stat(5.0)}
+        out[("nominal", c)] = {"n_trials": 3, metric: _stat(5.0)}
         out[("diff", c)] = {"n_trials": 3, metric: _stat(3.0)}
     return out
 
@@ -31,7 +31,7 @@ def _assert_written(paths):
 
 def test_f1_overlay(tmp_path):
     summary = _summary()
-    summary[("fixed", "nominal")]["cycles_mean"] = _stat(2.0)
+    summary[("nominal", "nominal")]["cycles_mean"] = _stat(2.0)
     summary[("diff", "nominal")]["cycles_mean"] = _stat(2.4)
     _assert_written(F.fig_overlay(summary, ["score.objective", "cycles_mean"],
                                   str(tmp_path / "f1")))
@@ -39,7 +39,7 @@ def test_f1_overlay(tmp_path):
 
 def test_f1_handles_inf(tmp_path):
     summary = _summary()
-    summary[("fixed", "nominal")]["score.objective"] = _stat(float("inf"), values=[float("inf")])
+    summary[("nominal", "nominal")]["score.objective"] = _stat(float("inf"), values=[float("inf")])
     _assert_written(F.fig_overlay(summary, ["score.objective"], str(tmp_path / "f1")))
 
 
@@ -53,7 +53,7 @@ def _write_traj(path, steps=100, n_env=2):
 def test_f2_trajectory(tmp_path):
     _write_traj(tmp_path / "a.npz")
     _write_traj(tmp_path / "b.npz")
-    _assert_written(F.fig_trajectory([("fixed", str(tmp_path / "a.npz")),
+    _assert_written(F.fig_trajectory([("nominal", str(tmp_path / "a.npz")),
                                       ("diff", str(tmp_path / "b.npz"))],
                                      str(tmp_path / "f2")))
 
@@ -70,7 +70,7 @@ def test_f4_timeseries(tmp_path):
     _write_traj(tmp_path / "a.npz")
     meta = tmp_path / "a.json"
     meta.write_text(json.dumps({"step_dt": 0.02, "d_ref_m": 1.5}))
-    _assert_written(F.fig_timeseries([("fixed", str(tmp_path / "a.npz"), str(meta))],
+    _assert_written(F.fig_timeseries([("nominal", str(tmp_path / "a.npz"), str(meta))],
                                      str(tmp_path / "f4"), t_event=0.5))
 
 
