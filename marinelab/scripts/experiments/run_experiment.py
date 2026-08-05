@@ -98,6 +98,7 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
         plot_path = cell.plot_path(results_root)
         for p in (traj_path, metrics_path, plot_path):
             p.parent.mkdir(parents=True, exist_ok=True)
+        traj.update(result["extras"].pop("aux_arrays", {}))  # per-step aux -> same npz
         np.savez_compressed(traj_path, **traj)
         with open(metrics_path, "w") as fh:
             json.dump(metrics, fh, indent=2)

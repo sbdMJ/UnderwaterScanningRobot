@@ -270,6 +270,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     current = CurrentDriver.from_options(opt, env)  # E3: None unless the cell asks for it
 
     log = em.TrajectoryLog()
+    aux_hist: dict[str, list] = {}
     action = torch.zeros(1, 6, device=dev)
     prev_z_ref = prev_s_ref = None
     for i in range(steps):
@@ -314,6 +315,10 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             theta_anchor=theta_anchor, s_anchor=s_anchor, phase=int(state_sm.phase[0]),
         )
         out = ctl.step(veh, ref)
+        for k, v in out.aux.items():  # per-step method diagnostics -> npz (aux_* keys)
+            arr = np.atleast_1d(np.asarray(v, float))
+            if arr.ndim == 1:
+                aux_hist.setdefault(k, []).append(arr)
         e_score = _gt_errors(env, pos, quat, z_ref, s_ref, prev_z_ref, prev_s_ref,
                              theta, s_gt, dt, mpc_cfg)
         prev_z_ref, prev_s_ref = z_ref.clone(), s_ref.clone()
@@ -345,7 +350,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             print(f"  t={i * dt:6.1f}s ph={int(state_sm.phase[0])} z={float(pos_n[0, 2]):5.2f} "
                   f"s={float(s_gt[0]):+6.2f} solve={out.solve_ms:.1f}ms")
 
-    extras = {}
+    extras = {"aux_arrays": {f"aux_{k}": np.stack(v) for k, v in aux_hist.items()}}
     if use_ekf:
         e = {k: np.asarray(v) for k, v in est_err.items()}
         extras["estimator"] = {

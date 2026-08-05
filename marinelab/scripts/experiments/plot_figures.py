@@ -83,7 +83,8 @@ def _cases_f4(results_dir: str, cond: str):
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Paper figures from results/ artifacts")
-    p.add_argument("fig", choices=["f1", "f2", "f3", "f4", "f5", "f6"])
+    p.add_argument("fig", choices=["f1", "f2", "f3", "f4", "f5", "f6",
+                                   "f7", "f8", "f9", "f10"])
     p.add_argument("results", nargs="+", help="results dir(s); f5 takes two")
     p.add_argument("--metrics", nargs="+", default=DEFAULT_F1_METRICS, help="f1 panels")
     p.add_argument("--metric", default="score.objective", help="f3/f5 y-axis metric key")
@@ -117,11 +118,29 @@ def main() -> None:
         named = {name: _summary(r, [args.metric]) for name, r in zip(names, args.results)}
         paths = F.fig_zeroshot_ft(named, args.metric, out, cond=args.cond,
                                   ylabel=args.ylabel)
-    else:  # f6
+    elif args.fig == "f6":
         offline = collect_budgets(args.tuning) if args.tuning else {}
         # budget dirs are named by tuning method (bo_nmpc/ssi_mpc) -> map to method keys
         offline = {name.split("_")[0]: b for name, b in offline.items()}
         paths = F.fig_cost(offline, _summary(root, ["controller_cost.solve_ms_mean"]), out)
+    elif args.fig == "f7":
+        cond = args.cond or "nominal"
+        per, metrics_dir = _scan_trajectories(root, cond)
+        cases = []
+        for method in sorted(per, key=_method_key):
+            seeds = per[method]
+            s = args.seed if args.seed in seeds else min(seeds)
+            cases.append((method, METHOD_LABELS.get(method, method), seeds[s],
+                          os.path.join(metrics_dir, f"metrics_{method}_{cond}_s{s}.json")))
+        paths = F.fig_states(cases, out)
+    elif args.fig == "f8":
+        paths = F.fig_task(out)
+    elif args.fig == "f9":
+        cond = args.cond or "step"
+        paths = F.fig_pred_error(_cases_f4(root, cond), out)
+    else:  # f10
+        paths = F.fig_sensitivity(collect(root), out, metric=args.metric,
+                                  ylabel=args.ylabel)
     print("[INFO] wrote " + " ".join(paths))
 
 

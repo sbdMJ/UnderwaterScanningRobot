@@ -284,6 +284,184 @@ def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# F7 — sample-run state evolution (SSI-MPC Fig. 3(b) form): stacked state panels
+# ---------------------------------------------------------------------------
+
+
+def fig_states(cases: list[tuple[str, str, str, str]], out: str, *, env: int = 0) -> list[str]:
+    """cases: [(method, label, npz_path, metrics_json)] — one representative run each;
+    panels: depth+ref, arc length+ref, wall distance+d_ref, tilt, all vs time."""
+    fig, axes = plt.subplots(4, 1, figsize=(4.8, 5.6), sharex=True)
+    ref_drawn = False
+    for method, label, npz_path, metrics_path in cases:
+        with open(metrics_path) as fh:
+            meta = json.load(fh)
+        dt, d_ref = float(meta["step_dt"]), float(meta["d_ref_m"])
+        traj = np.load(npz_path)
+        t = np.arange(_traj_2d(traj["z"]).shape[0]) * dt
+        series = [(_traj_2d(traj["z"])[:, env], _traj_2d(traj["z_ref"])[:, env]),
+                  (_traj_2d(traj["s_gt"])[:, env], _traj_2d(traj["s_ref"])[:, env]),
+                  (_traj_2d(traj["wall_dist"])[:, env], np.full(len(t), d_ref)),
+                  (_traj_2d(traj["tilt_deg"])[:, env], None)]
+        for ax, (sig, ref) in zip(axes, series):
+            ax.plot(t, sig, color=_color(method), lw=1.0, label=label, zorder=2)
+            if ref is not None and not ref_drawn:
+                ax.plot(t, ref, "--", color="black", lw=1.2, zorder=3,
+                        label="Reference" if ax is axes[0] else None)
+        ref_drawn = True
+    for ax, ylab in zip(axes, ("Depth $z$ [m]", "Arc length $s$ [m]",
+                               "Wall distance [m]", "Tilt [deg]")):
+        ax.set_ylabel(ylab, fontsize=9)
+    axes[0].legend(loc="best", ncols=2)
+    axes[-1].set_xlabel("Time [s]")
+    fig.tight_layout(h_pad=0.4)
+    return _save(fig, out)
+
+
+# ---------------------------------------------------------------------------
+# F8 — task geometry (SSI-MPC Fig. 5 form): tank + zig-zag scan reference, 3-D
+# ---------------------------------------------------------------------------
+
+
+def fig_task(out: str, *, radius: float = 6.0, height: float = 10.0, d_ref: float = 1.5,
+             z_top: float = 8.5, z_bottom: float = 1.5, sway_step: float = 1.0,
+             n_cycles: int = 3) -> list[str]:
+    fig = plt.figure(figsize=(4.4, 3.8))
+    ax = fig.add_subplot(projection="3d")
+    th = np.linspace(0, 2 * np.pi, 80)
+    zz = np.linspace(0, height, 12)
+    TH, ZZ = np.meshgrid(th, zz)
+    ax.plot_surface(radius * np.cos(TH), radius * np.sin(TH), ZZ, color="#9DB8CC",
+                    alpha=0.14, linewidth=0, antialiased=True)
+    for z in (0.0, height):
+        ax.plot(radius * np.cos(th), radius * np.sin(th), z, color="0.55", lw=0.9)
+    # zig-zag scan reference on the wall offset surface (r = R - d_ref)
+    r = radius - d_ref
+    dth = sway_step / r
+    seg_t = np.linspace(0, 1, 24)
+    th0, pts = 0.0, []
+    for _ in range(n_cycles):
+        pts.append(np.column_stack([np.full_like(seg_t, th0), z_top + (z_bottom - z_top) * seg_t]))
+        pts.append(np.column_stack([th0 + dth * seg_t, np.full_like(seg_t, z_bottom)]))
+        pts.append(np.column_stack([np.full_like(seg_t, th0 + dth), z_bottom + (z_top - z_bottom) * seg_t]))
+        pts.append(np.column_stack([th0 + dth + dth * seg_t, np.full_like(seg_t, z_top)]))
+        th0 += 2 * dth
+    path = np.concatenate(pts)
+    ax.plot(r * np.cos(path[:, 0]), r * np.sin(path[:, 0]), path[:, 1],
+            color=METHOD_COLORS["diff"], lw=1.8, label="Scan reference", zorder=5)
+    # vehicle + sonar beam to the wall
+    p = np.array([r * np.cos(path[0, 0]), r * np.sin(path[0, 0]), path[0, 1]])
+    w = np.array([radius * np.cos(path[0, 0]), radius * np.sin(path[0, 0]), path[0, 1]])
+    ax.scatter(*p, color="black", s=26, zorder=6, label="Vehicle")
+    ax.plot(*np.column_stack([p, w]), color="#D95319", lw=1.4, ls="-", zorder=6,
+            label="Sonar beam")
+    ax.set_xlabel("$x$ [m]")
+    ax.set_ylabel("$y$ [m]")
+    ax.set_zlabel("$z$ [m]")
+    ax.set_zlim(0, height)
+    ax.view_init(elev=18, azim=-55)
+    ax.set_box_aspect((1, 1, 0.85))
+    ax.grid(False)
+    ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    return _save(fig, out)
+
+
+# ---------------------------------------------------------------------------
+# F9 — online SysID prediction error decay (SSI-MPC Fig. 3(c) form)
+# ---------------------------------------------------------------------------
+
+
+def fig_pred_error(cases: list[tuple[str, str, list[str], str]], out: str, *,
+                   key: str = "aux_ssi_pred_err", smooth_s: float = 1.0) -> list[str]:
+    """cases as in fig_timeseries; plots the logged per-step prediction-error norm."""
+    fig, ax = plt.subplots(figsize=(3.8, 2.7))
+    drew = False
+    for method, label, npz_paths, metrics_path in cases:
+        with open(metrics_path) as fh:
+            dt = float(json.load(fh)["step_dt"])
+        runs = []
+        for p in npz_paths:
+            traj = np.load(p)
+            if key in traj:
+                runs.append(_traj_2d(traj[key]))
+        if not runs:
+            continue
+        n = min(r.shape[0] for r in runs)
+        data = np.concatenate([r[:n] for r in runs], axis=1)
+        window = max(1, int(round(smooth_s / dt)))
+        t = np.arange(n) * dt
+        mean = _smooth(np.nanmean(data, axis=1), window)
+        ax.plot(t, mean, color=_color(method), label=label, zorder=3)
+        if data.shape[1] > 1:
+            sd = _smooth(np.nanstd(data, axis=1), window)
+            ax.fill_between(t, mean - sd, mean + sd, color=_color(method), alpha=0.18,
+                            linewidth=0, zorder=2)
+        drew = True
+    if not drew:
+        raise ValueError(f"no run carries the {key!r} channel (SSI cells only)")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Prediction error")
+    ax.set_ylim(bottom=0)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    return _save(fig, out)
+
+
+# ---------------------------------------------------------------------------
+# F10 — SSI hyperparameter sensitivity (SSI-MPC Fig. 4 form): lr / n_rf sweeps
+# ---------------------------------------------------------------------------
+
+
+def fig_sensitivity(rows: list[dict], out: str, *, metric: str = "score.objective",
+                    ylabel: str | None = None) -> list[str]:
+    """rows: aggregate.collect() output of the sensitivity experiment. Two panels
+    (their Fig. 4 protocol): metric vs lr at the FIXED modal n_rf, and metric vs n_rf
+    at the M-family's fixed lr — each panel holds the other hyperparameter constant."""
+    from collections import Counter
+
+    def _mode(vals):
+        vals = [v for v in vals if v is not None]
+        return Counter(vals).most_common(1)[0][0] if vals else None
+
+    nrf_mode = _mode([r.get("options.ssi_n_rf") for r in rows])
+    lr_rows = [r for r in rows if r.get("options.ssi_n_rf") == nrf_mode]
+    m_family = [r for r in rows if r.get("options.ssi_n_rf") not in (None, nrf_mode)]
+    lr_fixed = _mode([r.get("options.ssi_lr") for r in (m_family or rows)])
+    m_rows = [r for r in rows if r.get("options.ssi_lr") == lr_fixed]
+
+    def _panel(ax, panel_rows, xkey, xlabel, log_x):
+        groups: dict[float, list[float]] = {}
+        for r in panel_rows:
+            x, v = r.get(xkey), r.get(metric)
+            if x is None or v is None or not np.isfinite(v):
+                continue
+            groups.setdefault(float(x), []).append(float(v))
+        if not groups:
+            ax.set_axis_off()
+            return
+        xs = sorted(groups)
+        means = [float(np.mean(groups[x])) for x in xs]
+        sds = [float(np.std(groups[x], ddof=1)) if len(groups[x]) > 1 else 0.0 for x in xs]
+        color = METHOD_COLORS["ssi"]
+        ax.errorbar(xs, means, yerr=sds, marker=METHOD_MARKERS["ssi"], ms=5, color=color,
+                    mec="black", mew=0.4, capsize=3, zorder=3)
+        for x in xs:
+            ax.scatter([x] * len(groups[x]), groups[x], s=7, color=color, alpha=0.35,
+                       zorder=2, linewidths=0)
+        if log_x:
+            ax.set_xscale("log")
+        ax.set_xlabel(xlabel)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.2, 2.7), sharey=True)
+    _panel(ax1, lr_rows, "options.ssi_lr", r"Learning rate $\eta$", log_x=True)
+    _panel(ax2, m_rows, "options.ssi_n_rf", r"Random features $M$", log_x=False)
+    ax1.set_ylabel(ylabel or metric)
+    fig.tight_layout(w_pad=1.0)
+    return _save(fig, out)
+
+
 def fig_cost(offline: dict[str, dict], summary: dict, out: str, *,
              inference_metric: str = "controller_cost.solve_ms_mean") -> list[str]:
     methods = sorted(set(offline) | {m for (m, _c) in summary}, key=_method_key)

@@ -291,6 +291,10 @@ obs 31 → action 6, 48 steps/env, adaptive LR (desired_kl 0.01), γ=0.995.
 
 ## Reference docs in-repo
 
+- `marinelab/scripts/experiments/README.md` — competitor-comparison experiments (E1–E4):
+  runner/tuning/aggregation/figure pipeline, results layout (`experimental_results/`)
+- `docs/competitor_framework_plan.md` — the experiment framework's design decisions
+  (controller layer, tuning protocol, figure plan F1–F10, SSI-MPC GPL isolation)
 - `docker/README.md` — this host's runtime, GUI, reproduction commands
 - `marinelab/docs/wallscan-training-code-guide.md` — code walkthrough in execution order (Korean)
 - `marinelab/docs/wallscan-project-report.md` — results write-up

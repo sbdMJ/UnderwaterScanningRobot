@@ -84,6 +84,48 @@ def test_f5_zeroshot_ft(tmp_path):
     _assert_written(F.fig_zeroshot_ft(named, "score.objective", str(tmp_path / "f5")))
 
 
+def test_f7_states(tmp_path):
+    _write_traj(tmp_path / "a.npz")
+    meta = tmp_path / "a.json"
+    meta.write_text(json.dumps({"step_dt": 0.02, "d_ref_m": 1.5}))
+    _assert_written(F.fig_states(
+        [("nominal", "Nominal NMPC", str(tmp_path / "a.npz"), str(meta)),
+         ("diff", "Diff-WMPC (ours)", str(tmp_path / "a.npz"), str(meta))],
+        str(tmp_path / "f7")))
+
+
+def test_f8_task_geometry(tmp_path):
+    _assert_written(F.fig_task(str(tmp_path / "f8")))
+
+
+def test_f9_pred_error(tmp_path):
+    steps = 200
+    decay = 0.5 * np.exp(-np.arange(steps) / 40.0) + 0.02
+    np.savez(tmp_path / "ssi.npz", aux_ssi_pred_err=decay[:, None])
+    _write_traj(tmp_path / "plain.npz")  # no aux channel: silently skipped
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps({"step_dt": 0.02, "d_ref_m": 1.5}))
+    _assert_written(F.fig_pred_error(
+        [("ssi", "SSI-MPC", [str(tmp_path / "ssi.npz")], str(meta)),
+         ("nominal", "Nominal NMPC", [str(tmp_path / "plain.npz")], str(meta))],
+        str(tmp_path / "f9")))
+    with pytest.raises(ValueError):
+        F.fig_pred_error([("nominal", "n", [str(tmp_path / "plain.npz")], str(meta))],
+                         str(tmp_path / "f9b"))
+
+
+def test_f10_sensitivity(tmp_path):
+    rows = []
+    for lr in (0.01, 0.1, 1.0):
+        for v in (3.0, 3.2):
+            rows.append({"options.ssi_lr": lr, "options.ssi_n_rf": 100,
+                         "score.objective": v + lr})
+    for m in (25, 100, 500):
+        rows.append({"options.ssi_lr": 0.1, "options.ssi_n_rf": m,
+                     "score.objective": 3.0 + 10.0 / m})
+    _assert_written(F.fig_sensitivity(rows, str(tmp_path / "f10")))
+
+
 def test_f6_cost(tmp_path):
     offline = {"bo": {"wall_clock_s": 1000.0, "env_steps": 450000},
                "ssi": {"wall_clock_s": 900.0, "env_steps": 450000},

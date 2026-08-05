@@ -10,7 +10,12 @@ PKRC UUV(22.8 kg, T200×6)가 원통 수조(R=6 m, H=10 m) 벽면을 Ping1D 단�
 | `marinelab/` | 학습 환경 소스 전체 — wallscan 태스크(13항 보상·스캔 상태기계·센서 모델·DR), PKRC 자산(USD/OBJ), 테스트 84개 |
 | `isaaclab/` | Isaac Lab 소스 전체(upstream 47aa161 기준, 커스텀 수정 없음) — 버전 재현용 |
 | `checkpoints/` | 최종 정책 `rb_train_model_7998.pt` + 학습 설정(agent/env yaml) |
-| `results/` | 평가 궤적 플롯(공칭/스트레스 DR) |
+| `results/` | (legacy) 초기 Diff-WMPC 캠페인의 평가 산출물 — 신규 실험은 아래 사용 |
+| `experimental_results/` | competitor 비교 실험 산출물 (실험별 `raw/metrics/plots/tables/figures` 구조) |
+| `docs/` | 실험 설계(`experiments_plan.md`) + 프레임워크 구현 계획(`competitor_framework_plan.md`) |
+
+**Competitor 비교 실험(E1–E4)의 실행 방법은 [marinelab/scripts/experiments/README.md](marinelab/scripts/experiments/README.md) 참조** —
+방법(nominal/bo/ppo/ssi/diff) × 조건 × seed 실행부터 LaTeX 표·논문 그림(F1–F10) 자동 생성까지.
 
 학습 곡선: https://wandb.ai/yju1121-postech/pkrc_wallscan
 

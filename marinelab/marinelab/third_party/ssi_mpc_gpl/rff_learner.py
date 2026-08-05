@@ -53,6 +53,7 @@ class RFFOnlineLearner:
         self.Bh = np.eye(self.state_dim)[self.target_mask].T
         self.Bz = np.eye(self.state_dim + self.u_dim)[self.input_mask]
         self.alpha = np.zeros((len(self.target_mask), self.n_rf))
+        self.last_pred_err = float("nan")  # |err_pred| of the latest OGD step (Fig 3(c) diag)
         self._x_last: np.ndarray | None = None
         self._u_last: np.ndarray | None = None
 
@@ -82,6 +83,7 @@ class RFFOnlineLearner:
                              float).reshape(self.state_dim)
         # x_pred(alpha) = x_pred0 + dt * Bh @ (alpha @ rf)  =>  upstream error_pred:
         err_pred = (self.Bh.T @ (x_pred0 - x_meas) / dt)[:, None] + self.alpha @ rf
+        self.last_pred_err = float(np.linalg.norm(err_pred))
         self.alpha = self.alpha - 2.0 * self.lr * (err_pred @ rf.T)
         return self.alpha
 

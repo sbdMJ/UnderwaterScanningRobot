@@ -126,4 +126,5 @@ class SSIMPCController(FixedWeightNMPC):
         self._learner.record_control(x, out.u_cmd)
         out.aux["ssi_residual_b"] = r_b
         out.aux["ssi_alpha_norm"] = float(np.linalg.norm(self._learner.alpha))
+        out.aux["ssi_pred_err"] = self._learner.last_pred_err
         return out

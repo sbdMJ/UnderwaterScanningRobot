@@ -243,12 +243,14 @@ torch만 있으면 된다 (현재 이 PC의 Python 3.13에는 torch 미설치 �
 | F4 | 외란 응답 시계열 | 추종오차·기울기 vs 시간, 조류 급전환 시점 수직선, 방법별 | `experimental_results/e3/trajectory_*.npz` | E3 |
 | F5 | zero-shot vs fine-tuned | 막대 비교 (fine-tune은 제안 방법만) | E2(b) 실행 후 metrics | E2(b) |
 | F6 | 비용 비교 | 학습/튜닝/추론 비용 (E4b·c 표의 그림판) | `budget.json` + `controller_cost` + W&B | E4(b,c) |
+| F7 | 상태 시계열 멀티패널 | z·s·벽거리·tilt 스택 + 레퍼런스, 방법 오버레이 (SSI Fig 3(b) 형식) | raw npz | E1/E3 |
+| F8 | 태스크 개념도 | 원통 수조 + 지그재그 스캔 레퍼런스 + 소나 빔 3D (SSI Fig 5 형식) | 기하만, 데이터 불필요 | 도입부 |
+| F9 | 예측오차 감소 곡선 | SSI SysID의 온라인 학습 진행 (SSI Fig 3(c) 형식) — 2026-08-05 부활 결정 | npz의 `aux_ssi_pred_err` 채널 (러너가 `out.aux`를 `aux_*`로 자동 저장) | E3/부록 |
+| F10 | SSI 민감도 2패널 | lr 스윕(다른 변수 고정) + n_rf 스윕 (SSI Fig 4 형식) — 〃 부활 | `e4_sensitivity_ssi` metrics의 options 값 | E4 부록 |
 
-**보류 목록** (컨트리뷰션 확정 후 재도입 판단; 필요 시 스텝별 aux 로깅 선행):
-- SSI-MPC 특화: 예측오차 감소 곡선, n_rf/lr 민감도 스윕(`e4_sensitivity_ssi.yaml`은
-  부록/여력 시 전용으로 남김 — 기본 실행 플랜에서 제외)
-- 제안 방법 특화: 가중치 적응 가시화(phase별 w 변화)
-- 내부 진단: 튜닝 trial 산점도 (리뷰 대응 자료로는 보관, 본문 그림 아님)
+**남은 보류**: 제안 방법 특화 가중치 적응 가시화(phase별 w — `aux_werr` 채널은 이미
+로깅되므로 그림만 추가하면 됨), 방법 개요도(Fig 2 대응, 수작업 드로잉), 실기체/시나리오
+사진(E5 촬영 시).
 
 SSI-MPC 논문에서 계승하는 것은 그림이 아니라 **관례**만: 조건당 trial 수(5회)·mean±SD
 통계·계산시간 mean±SD 표, 그리고 하드웨어에서 하이퍼파라미터 축소·고정(그들은 시뮬
