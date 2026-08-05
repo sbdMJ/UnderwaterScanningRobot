@@ -36,8 +36,8 @@ def _summary(results_dir: str, metrics: list[str]):
     return summarize(rows, metrics)
 
 
-def _cases(results_dir: str, cond: str, seed: int, with_metrics: bool):
-    """One (label, npz[, metrics]) per method found for the given condition/seed.
+def _scan_trajectories(results_dir: str, cond: str):
+    """method -> {seed: npz_path} for a condition, plus the metrics dir.
 
     Looks in the structured layout (<exp>/raw + <exp>/metrics) first, falling back to a
     flat directory for legacy/synthetic data.
@@ -46,24 +46,39 @@ def _cases(results_dir: str, cond: str, seed: int, with_metrics: bool):
     raw_dir = raw_dir if os.path.isdir(raw_dir) else results_dir
     metrics_dir = os.path.join(results_dir, "metrics")
     metrics_dir = metrics_dir if os.path.isdir(metrics_dir) else results_dir
-    pat = re.compile(rf"^trajectory_([^_]+)_{re.escape(cond)}_s{seed}\.npz$")
-    found = []
+    pat = re.compile(rf"^trajectory_([^_]+)_{re.escape(cond)}_s(\d+)\.npz$")
+    per: dict[str, dict[int, str]] = {}
     for name in sorted(os.listdir(raw_dir)):
         m = pat.match(name)
-        if not m:
-            continue
-        method = m.group(1)
-        label = METHOD_LABELS.get(method, method)
-        npz = os.path.join(raw_dir, name)
-        if with_metrics:
-            found.append((method, label, npz, os.path.join(
-                metrics_dir, f"metrics_{method}_{cond}_s{seed}.json")))
-        else:
-            found.append((method, label, npz))
-    if not found:
-        raise SystemExit(f"no trajectory_*_{cond}_s{seed}.npz under {raw_dir}")
-    found.sort(key=lambda c: _method_key(c[0]))
-    return [tuple(c[1:]) for c in found]
+        if m:
+            per.setdefault(m.group(1), {})[int(m.group(2))] = os.path.join(raw_dir, name)
+    if not per:
+        raise SystemExit(f"no trajectory_*_{cond}_s*.npz under {raw_dir}")
+    return per, metrics_dir
+
+
+def _cases_f2(results_dir: str, cond: str, seed: int):
+    """[(method, label, npz)] — one representative seed per method."""
+    per, _ = _scan_trajectories(results_dir, cond)
+    cases = []
+    for method in sorted(per, key=_method_key):
+        seeds = per[method]
+        npz = seeds.get(seed, seeds[min(seeds)])
+        cases.append((method, METHOD_LABELS.get(method, method), npz))
+    return cases
+
+
+def _cases_f4(results_dir: str, cond: str):
+    """[(method, label, [npz per seed], metrics_json)] — ALL seeds feed the mean±SD band."""
+    per, metrics_dir = _scan_trajectories(results_dir, cond)
+    cases = []
+    for method in sorted(per, key=_method_key):
+        seeds = per[method]
+        first = min(seeds)
+        cases.append((method, METHOD_LABELS.get(method, method),
+                      [seeds[s] for s in sorted(seeds)],
+                      os.path.join(metrics_dir, f"metrics_{method}_{cond}_s{first}.json")))
+    return cases
 
 
 def main() -> None:
@@ -71,7 +86,8 @@ def main() -> None:
     p.add_argument("fig", choices=["f1", "f2", "f3", "f4", "f5", "f6"])
     p.add_argument("results", nargs="+", help="results dir(s); f5 takes two")
     p.add_argument("--metrics", nargs="+", default=DEFAULT_F1_METRICS, help="f1 panels")
-    p.add_argument("--metric", default="score.objective", help="f3/f5 y-axis")
+    p.add_argument("--metric", default="score.objective", help="f3/f5 y-axis metric key")
+    p.add_argument("--ylabel", default=None, help="f3/f5 y-axis label (default: metric key)")
     p.add_argument("--cond", default=None, help="condition (f1/f2/f4/f5)")
     p.add_argument("--seed", type=int, default=0, help="trajectory seed (f2/f4)")
     p.add_argument("--t-event", type=float, default=None, help="f4 event marker [s]")
@@ -87,18 +103,20 @@ def main() -> None:
         paths = F.fig_overlay(_summary(root, args.metrics), args.metrics, out, cond=args.cond)
     elif args.fig == "f2":
         cond = args.cond or "nominal"
-        paths = F.fig_trajectory(_cases(root, cond, args.seed, False), out)
+        paths = F.fig_trajectory(_cases_f2(root, cond, args.seed), out)
     elif args.fig == "f3":
-        paths = F.fig_sweep(_summary(root, [args.metric]), args.metric, out)
+        paths = F.fig_sweep(_summary(root, [args.metric]), args.metric, out,
+                            ylabel=args.ylabel)
     elif args.fig == "f4":
         cond = args.cond or "step"
-        paths = F.fig_timeseries(_cases(root, cond, args.seed, True), out, t_event=args.t_event)
+        paths = F.fig_timeseries(_cases_f4(root, cond), out, t_event=args.t_event)
     elif args.fig == "f5":
         if len(args.results) < 2:
             raise SystemExit("f5 needs two results dirs (zero-shot, fine-tuned)")
         names = args.names or [os.path.basename(os.path.normpath(r)) for r in args.results]
         named = {name: _summary(r, [args.metric]) for name, r in zip(names, args.results)}
-        paths = F.fig_zeroshot_ft(named, args.metric, out, cond=args.cond)
+        paths = F.fig_zeroshot_ft(named, args.metric, out, cond=args.cond,
+                                  ylabel=args.ylabel)
     else:  # f6
         offline = collect_budgets(args.tuning) if args.tuning else {}
         # budget dirs are named by tuning method (bo_nmpc/ssi_mpc) -> map to method keys

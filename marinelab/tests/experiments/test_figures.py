@@ -53,9 +53,10 @@ def _write_traj(path, steps=100, n_env=2):
 def test_f2_trajectory(tmp_path):
     _write_traj(tmp_path / "a.npz")
     _write_traj(tmp_path / "b.npz")
-    _assert_written(F.fig_trajectory([("nominal", str(tmp_path / "a.npz")),
-                                      ("diff", str(tmp_path / "b.npz"))],
-                                     str(tmp_path / "f2")))
+    _assert_written(F.fig_trajectory(
+        [("nominal", "Nominal NMPC", str(tmp_path / "a.npz")),
+         ("diff", "Diff-WMPC (ours)", str(tmp_path / "b.npz"))],
+        str(tmp_path / "f2")))
 
 
 def test_f3_sweep_and_level_parse(tmp_path):
@@ -66,12 +67,15 @@ def test_f3_sweep_and_level_parse(tmp_path):
     _assert_written(F.fig_sweep(summary, "score.objective", str(tmp_path / "f3")))
 
 
-def test_f4_timeseries(tmp_path):
+def test_f4_timeseries_multi_seed_band(tmp_path):
     _write_traj(tmp_path / "a.npz")
+    _write_traj(tmp_path / "b.npz", steps=90)  # shorter run: lengths are aligned to the min
     meta = tmp_path / "a.json"
     meta.write_text(json.dumps({"step_dt": 0.02, "d_ref_m": 1.5}))
-    _assert_written(F.fig_timeseries([("nominal", str(tmp_path / "a.npz"), str(meta))],
-                                     str(tmp_path / "f4"), t_event=0.5))
+    _assert_written(F.fig_timeseries(
+        [("nominal", "Nominal NMPC", [str(tmp_path / "a.npz"), str(tmp_path / "b.npz")],
+          str(meta))],
+        str(tmp_path / "f4"), t_event=0.5))
 
 
 def test_f5_zeroshot_ft(tmp_path):
