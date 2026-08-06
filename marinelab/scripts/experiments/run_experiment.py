@@ -91,6 +91,10 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
                         "controller_cost": ctl.stats.summary(),
                         "score": {k: score_summary[k] for k in
                                   ("objective", "collided", "scored_losses")}})
+        # aux channels are per-step arrays: they belong in the npz, never in the json.
+        # Pop before the merge -- popping afterwards only removes them from `extras`,
+        # leaving metrics holding the arrays and json.dump raising on ndarray.
+        aux_arrays = result["extras"].pop("aux_arrays", {})
         metrics.update(result["extras"])
 
         traj_path = cell.trajectory_path(results_root)
@@ -98,7 +102,7 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
         plot_path = cell.plot_path(results_root)
         for p in (traj_path, metrics_path, plot_path):
             p.parent.mkdir(parents=True, exist_ok=True)
-        traj.update(result["extras"].pop("aux_arrays", {}))  # per-step aux -> same npz
+        traj.update(aux_arrays)
         np.savez_compressed(traj_path, **traj)
         with open(metrics_path, "w") as fh:
             json.dump(metrics, fh, indent=2)
@@ -127,6 +131,8 @@ def main() -> None:
             available = list(yaml.safe_load(fh).get("methods", {}))
         raise SystemExit(f"no cells match method={args_cli.method!r} "
                          f"(config methods: {available}, or 'all')")
+    for cell in cells:  # make the standard --device flag reach build_env (see there)
+        cell.options.setdefault("device", args_cli.device)
     results_root = os.path.abspath(args_cli.results_root
                                    or os.path.join(sl.REPO_ROOT, "experimental_results"))
     print(f"[INFO] {len(cells)} cell(s) -> {results_root}")

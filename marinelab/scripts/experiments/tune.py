@@ -70,6 +70,7 @@ def main() -> None:
         "horizon": int(tcfg.get("horizon", 30)),
         "dt_mpc": float(tcfg.get("dt_mpc", 0.05)),
         "rti_iters": int(tcfg.get("rti_iters", 8)),
+        "device": args_cli.device,  # see build_env: the cfg classes would ignore --device
     }
     if method == "ssi_mpc" and tcfg.get("inherit_weights"):
         options["params_json"] = tcfg["inherit_weights"]  # §6: SSI starts from BO weights

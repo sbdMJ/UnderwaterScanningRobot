@@ -78,6 +78,13 @@ def build_env(cell: ExperimentCell):
     cfg = TASK_CFGS[task]()
     cfg.scene.num_envs = int(opt.get("num_envs", 1))
     cfg.seed = cell.seed
+    # The cfg classes hardcode a device, so the standard --device flag would otherwise
+    # be ignored here (unlike parse_env_cfg-based scripts). The runners seed this from
+    # args_cli.device, and it lands in the metrics `options` snapshot. It matters: this
+    # scene is one rigid body, and on a virtualised GPU (WSL2 routes every launch through
+    # a /dev/dxg ioctl) cuda:0 measured <0.4 env-step/s against 254 on cpu.
+    if opt.get("device"):
+        cfg.sim.device = str(opt["device"])
     tam = opt.get("tam", "env")
     if tam == "fixed":
         cfg.thrusters = PKRCThrusterCfgFixedTAM()
