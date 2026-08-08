@@ -118,6 +118,20 @@ def run_cell(cell: ExperimentCell, results_root: str) -> None:
                                title=f"{cell.method} [{cell.tag}]")
     finally:
         env.close()
+        # Isaac 5 + create_stage_in_memory=False: env.close() clears the sim instance's
+        # on-stop callback but leaves the timeline PLAYING. The next cell's
+        # SimulationContext.__init__ subscribes its own on-stop handler and then stop()s
+        # the timeline, landing in the handler's `while not is_playing(): render()`
+        # loop forever (isaaclab simulation_context.py:1024-1027; measured: 10 h spin,
+        # zero syscalls, 2026-08-08). Stopping here — after close() unsubscribed the old
+        # handler — lets the next cell boot with a stopped timeline, so no stop event fires.
+        import omni.timeline
+        omni.timeline.get_timeline_interface().stop()
+        # timeline.stop() alone does not commit until the app ticks: isaacsim's own
+        # SimulationContext.stop() follows it with app.update(), and without one the
+        # next cell's `if self.is_playing(): self.stop()` still sees playing=True
+        # (verified 2026-08-08: first fix without update() hung identically).
+        simulation_app.update()
 
 
 def main() -> None:
