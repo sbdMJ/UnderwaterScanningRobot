@@ -1,11 +1,16 @@
 {
-  "trials": 99,
-  "episodes": 110,
-  "env_steps": 459000,
-  "wall_clock_s": 6179.519545270981,
+  "trials": 103,
+  "episodes": 350,
+  "env_steps": 1431000,
+  "wall_clock_s": 21956.89019797204,
   "method": "bo_nmpc",
   "search_steps": 4500,
   "rescore_steps": 9000,
+  "eval_seeds": [
+    100,
+    101,
+    102
+  ],
   "sampler": "TPE",
   "sampler_seed": 0
 }
