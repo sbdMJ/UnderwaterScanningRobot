@@ -1,0 +1,23 @@
+# Interim spot check (attempt-3 tuning, mid-run): does the CURRENT best candidate
+# (trial 48 @ 67 trials, tuning seeds 100-102) already generalize to the held-out
+# E2 evaluation seeds? Runs the dr50 condition only — the E2 failure mode was
+# seed-driven, not DR-level-driven, so one condition x 3 seeds is a sufficient probe.
+# Results land in experimental_results/e2_interim/ (never mixed with the real e2).
+exp: e2_interim
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  dr50: {dr_fluid_scale: 0.50}
+
+methods:
+  bo:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/interim_snapshot_trial48.json
+
+seeds: [0, 1, 2]

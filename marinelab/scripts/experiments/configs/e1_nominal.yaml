@@ -29,7 +29,7 @@ methods:
     tam: fixed
     params_json: experimental_results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
     # set from experimental_results/tuning/ssi_mpc/best_params.json after tune.py --config tune_ssi_mpc.yaml:
-    ssi_lr: 0.0004178998335832172
-    ssi_kernel_std: 4.807252567767776
+    ssi_lr: 0.14733286466312384          # <- ssi_mpc attempt-2 (re-based, multi-seed) trial 87
+    ssi_kernel_std: 0.18398034704266503
 
 seeds: [0, 1, 2, 3, 4]
