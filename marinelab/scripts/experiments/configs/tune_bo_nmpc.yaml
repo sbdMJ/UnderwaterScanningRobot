@@ -1,11 +1,18 @@
 # §6 unified tuning — BO-static NMPC (E1 method ②).
 # ~100 TPE trials over the 12-D error-weight vector + scalar control weight,
 # shortened protocol for search, full protocol for top-k rescore.
+#
+# Attempt 3 (2026-08-08): single-seed scoring replaced by mean over 3 tuning seeds.
+# Attempts 1-2 used `seed: 0` for every trial and the rescore; the winner (trial 56,
+# rescored obj 151.7) scored 11.5 on E1 seed 0 but 14k-63k on seeds 1-4, and E2 showed
+# mean objective ~5.7x WORSE than the untuned nominal weights across all DR levels —
+# textbook single-scenario overfitting. Seeds 100-102 are disjoint from the evaluation
+# seeds (E1: 0-4, E2: 0-2), so E1/E2 remain held-out.
 method: bo_nmpc
 task: Isaac-PKRC-WallScan-Stage3-Direct-v0
 tam: fixed
 state: gt
-seed: 0            # env seed (fixed across trials: same conditions for every candidate)
+seeds: [100, 101, 102]  # per-trial objective = mean over these (held-out from E1/E2)
 sampler_seed: 0    # TPE reproducibility
 
 trials: 100

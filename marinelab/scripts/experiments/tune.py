@@ -85,27 +85,43 @@ def main() -> None:
         else:  # ssi_mpc: fresh learner with the candidate hyperparameters, fixed seed
             ctl.reconfigure(lr=params["lr"][0], kernel_std=params["kernel_std"][0], seed=0)
 
-    def episode_objective(steps: int) -> tuple[float, int]:
-        ctl.stats = ControllerStats()
-        score = ScoreAccumulator(1)
-        with torch.inference_mode():
-            sl.run_mpc_cell(cell, env, cfg, ctl, steps, mpc_cfg, score,
-                            sim_app=simulation_app, log_every=0)
-        score.finalize()
-        summary = score.summary(0)
-        obj = summary["objective"]
-        return (FAIL_OBJECTIVE if not np.isfinite(obj) else float(obj)), len(score.episodes)
+    # Attempt 3 protocol (2026-08-08): every candidate is scored on SEVERAL env seeds and
+    # ranked by the MEAN objective. Attempts 1-2 used a single fixed seed (seed 0) for all
+    # trials AND the rescore; E1/E2 then showed textbook overfitting — the winner scored
+    # 11.5 on the tuning seed but 26k-62k on every other seed, ~5.7x worse than the
+    # untuned baseline on the E2 mean. Tuning seeds are chosen DISJOINT from the
+    # evaluation seeds (E1: 0-4, E2: 0-2) so the paper can claim held-out validation.
+    eval_seeds = [int(s) for s in tcfg.get("seeds", [tcfg.get("seed", 0)])]
+
+    def episode_objective(params: dict, steps: int) -> tuple[float, int, list[float]]:
+        objs, episodes = [], 0
+        for s in eval_seeds:
+            apply_params(params)  # re-apply per seed: resets the SSI learner state too
+            type(env).seed(s)     # global torch/np RNG -> deterministic reset draws
+            ctl.stats = ControllerStats()
+            score = ScoreAccumulator(1)
+            with torch.inference_mode():
+                sl.run_mpc_cell(cell, env, cfg, ctl, steps, mpc_cfg, score,
+                                sim_app=simulation_app, log_every=0)
+            score.finalize()
+            summary = score.summary(0)
+            obj = summary["objective"]
+            objs.append(FAIL_OBJECTIVE if not np.isfinite(obj) else float(obj))
+            episodes += len(score.episodes)
+        return float(np.mean(objs)), episodes, objs
 
     search_steps = int(tcfg["steps"])
 
     def objective(trial: optuna.Trial) -> float:
         params = suggest_params(trial, tcfg["space"])
-        apply_params(params)
         t0 = time.perf_counter()
-        obj, n_episodes = episode_objective(search_steps)
+        obj, n_episodes, per_seed = episode_objective(params, search_steps)
         wall = time.perf_counter() - t0
-        recorder.record_trial(trial.number, params, obj, n_episodes, search_steps, wall)
-        print(f"[TRIAL {trial.number:3d}] objective={obj:.4g}  ({wall:.0f} s)")
+        recorder.record_trial(trial.number, params, obj, n_episodes,
+                              search_steps * len(eval_seeds), wall)
+        detail = " ".join(f"s{s}={o:.4g}" for s, o in zip(eval_seeds, per_seed))
+        print(f"[TRIAL {trial.number:3d}] mean={obj:.4g}  ({detail})  ({wall:.0f} s)",
+              flush=True)
         return obj
 
     storage = f"sqlite:///{os.path.join(out_dir, 'study.db')}"
@@ -127,12 +143,14 @@ def main() -> None:
     best_obj, best_trial, best_params = float("inf"), None, None
     for t in top:
         params = params_from_trial(t.params, tcfg["space"])
-        apply_params(params)
         t0 = time.perf_counter()
-        obj, n_episodes = episode_objective(rescore_steps)
+        obj, n_episodes, per_seed = episode_objective(params, rescore_steps)
         wall = time.perf_counter() - t0
-        recorder.record_trial(t.number, params, obj, n_episodes, rescore_steps, wall)
-        print(f"[RESCORE trial {t.number}] search={t.value:.4g} -> full={obj:.4g}")
+        recorder.record_trial(t.number, params, obj, n_episodes,
+                              rescore_steps * len(eval_seeds), wall)
+        detail = " ".join(f"s{s}={o:.4g}" for s, o in zip(eval_seeds, per_seed))
+        print(f"[RESCORE trial {t.number}] search={t.value:.4g} -> full={obj:.4g} ({detail})",
+              flush=True)
         if obj < best_obj:
             best_obj, best_trial, best_params = obj, t.number, params
 
@@ -140,7 +158,7 @@ def main() -> None:
         raise SystemExit("no completed trials to select from")
     recorder.write_best(best_params, objective=best_obj, rescored=True, trial_number=best_trial)
     recorder.write_budget({"method": method, "search_steps": search_steps,
-                           "rescore_steps": rescore_steps,
+                           "rescore_steps": rescore_steps, "eval_seeds": eval_seeds,
                            "sampler": "TPE", "sampler_seed": int(tcfg["sampler_seed"])})
     print(f"[DONE] best trial {best_trial} objective {best_obj:.4g}")
     print(f"       -> {out_dir}\\best_params.json (use via e1 yaml: methods.bo.params_json)")
