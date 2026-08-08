@@ -1,0 +1,91 @@
+{
+  "num_envs": 8,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 68000,
+  "tilt_heave_deg": 14.684965133666992,
+  "tilt_sway_deg": 22.84703254699707,
+  "tilt_deg": 16.53223419189453,
+  "crab_deg": 2.114551544189453,
+  "s_hat_err_cm": 123.07530641555786,
+  "heave_speed_mps": 0.19503538782564528,
+  "sway_speed_mps": 0.10503535114708308,
+  "heave_path_speed_mps": 0.19511215734785106,
+  "sway_path_speed_mps": 0.10723398437336748,
+  "heave_legs_scored": 21,
+  "sway_legs_scored": 27,
+  "wall_dist_err_cm": 28.57847809791565,
+  "cycles_mean": 1.625,
+  "cycles_per_env": [
+    2.0,
+    2.0,
+    1.0,
+    2.0,
+    2.0,
+    2.0,
+    0.0,
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 8,
+    "time_out": 8,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e2",
+  "method": "ppo",
+  "cond": "dr75",
+  "seed": 2,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Eval-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "gt",
+    "num_envs": 8,
+    "dr_fluid_scale": 0.75,
+    "policy": "checkpoints/exported/policy.pt",
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 72000,
+    "solve_ms_mean": 0.04415315389410858,
+    "solve_ms_p95": 0.10786626298795456,
+    "solve_ms_max": 2.9966330039314926,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.7518472222222222
+  },
+  "score": {
+    "objective": 450487.58444149845,
+    "collided": false,
+    "scored_losses": [
+      299566.0126982947,
+      411533.6111797947,
+      303324.39767800434,
+      298973.23894781887,
+      297788.2113812239,
+      301364.59619597706,
+      1396935.1828537183,
+      294415.4245971558
+    ]
+  }
+}

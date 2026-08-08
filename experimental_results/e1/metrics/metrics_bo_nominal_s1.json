@@ -4,18 +4,18 @@
   "step_dt": 0.02,
   "scored_episode": 0,
   "scored_steps": 8998,
-  "tilt_heave_deg": 0.2819920778274536,
-  "tilt_sway_deg": 0.3034728169441223,
-  "tilt_deg": 0.2839878499507904,
-  "crab_deg": 142.92453002929688,
+  "tilt_heave_deg": 0.2381262630224228,
+  "tilt_sway_deg": 1.225790023803711,
+  "tilt_deg": 0.33032873272895813,
+  "crab_deg": 0.38134264945983887,
   "s_hat_err_cm": 0.0,
-  "heave_speed_mps": 0.2002568835246917,
-  "sway_speed_mps": 0.10055567209537213,
-  "heave_path_speed_mps": 0.2002568835246917,
-  "sway_path_speed_mps": 0.10055567209537213,
+  "heave_speed_mps": 0.20006070000385792,
+  "sway_speed_mps": 0.09980427021044865,
+  "heave_path_speed_mps": 0.20006070000385792,
+  "sway_path_speed_mps": 0.09980427021044865,
   "heave_legs_scored": 3,
   "sway_legs_scored": 4,
-  "wall_dist_err_cm": 692.0992374420166,
+  "wall_dist_err_cm": 10.573465377092361,
   "cycles_mean": 2.0,
   "cycles_per_env": [
     2.0
@@ -50,21 +50,21 @@
     "num_envs": 1,
     "tam": "fixed",
     "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
-    "device": "cpu"
+    "device": "cuda:0"
   },
   "controller_cost": {
     "n_steps": 9000,
-    "solve_ms_mean": 8.913634606483457,
-    "solve_ms_p95": 9.589482563023921,
-    "solve_ms_max": 195.31104099587537,
+    "solve_ms_mean": 7.662068606192609,
+    "solve_ms_p95": 8.169328453368506,
+    "solve_ms_max": 122.12544499197975,
     "fail_frac": 0.0,
-    "saturated_frac": 0.013666666666666667
+    "saturated_frac": 0.0047777777777777775
   },
   "score": {
-    "objective": 62682.191230645905,
+    "objective": 126.26403778659808,
     "collided": false,
     "scored_losses": [
-      62682.191230645905
+      126.26403778659808
     ]
   }
 }

@@ -1,0 +1,91 @@
+{
+  "num_envs": 8,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 59500,
+  "tilt_heave_deg": 14.202149391174316,
+  "tilt_sway_deg": 14.98570728302002,
+  "tilt_deg": 14.294923782348633,
+  "crab_deg": 1.8675543069839478,
+  "s_hat_err_cm": 8.076971024274826,
+  "heave_speed_mps": 0.19757349927101053,
+  "sway_speed_mps": 0.11040968654096389,
+  "heave_path_speed_mps": 0.1975846637068476,
+  "sway_path_speed_mps": 0.11072493315092118,
+  "heave_legs_scored": 21,
+  "sway_legs_scored": 27,
+  "wall_dist_err_cm": 13.891810178756714,
+  "cycles_mean": 1.8571428571428572,
+  "cycles_per_env": [
+    2.0,
+    1.0,
+    2.0,
+    2.0,
+    2.0,
+    2.0,
+    null,
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 7924.125,
+  "episode_s_mean": 158.48250000000002,
+  "episode_s_per_env": [
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    179.98,
+    8.0,
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": true,
+  "terminations": {
+    "total": 8,
+    "time_out": 7,
+    "collided": 1,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e2",
+  "method": "ppo",
+  "cond": "dr25",
+  "seed": 1,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Eval-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "gt",
+    "num_envs": 8,
+    "dr_fluid_scale": 0.25,
+    "policy": "checkpoints/exported/policy.pt",
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 72000,
+    "solve_ms_mean": 0.05406856239339201,
+    "solve_ms_p95": 0.1571530607179739,
+    "solve_ms_max": 1.8387360032647848,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.6827638888888888
+  },
+  "score": {
+    "objective": Infinity,
+    "collided": true,
+    "scored_losses": [
+      319157.93464144674,
+      307580.0512910482,
+      296989.2505116071,
+      316074.64093143475,
+      296944.65670101315,
+      296824.25909483957,
+      Infinity,
+      295246.06274695724
+    ]
+  }
+}
