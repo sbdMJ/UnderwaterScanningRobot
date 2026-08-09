@@ -273,6 +273,16 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
 
     env.reset()
     env.episode_length_buf[:] = 0  # own the whole window (see run_wallscan_mpc / CLAUDE.md)
+    if "fluid_scale" in opt:
+        # E2b' deterministic plant shift ('s' or 'am,ld,qd'): applied AFTER reset so the
+        # env's own reset paths cannot re-draw over it. Same immutable-base scale_parameters
+        # path as DR — the MPC model stays nominal, so this IS the model mismatch under test.
+        v = [float(x) for x in str(opt["fluid_scale"]).split(",")]
+        am, ld, qd = (v * 3)[:3] if len(v) == 1 else v
+        ids = torch.arange(env.num_envs, device=env.device)
+        env._hydro.scale_parameters(ids, added_mass=torch.full((env.num_envs,), am, device=env.device),
+                                    linear_damping=torch.full((env.num_envs,), ld, device=env.device),
+                                    quadratic_damping=torch.full((env.num_envs,), qd, device=env.device))
     reset_internal()
     current = CurrentDriver.from_options(opt, env)  # E3: None unless the cell asks for it
 

@@ -78,6 +78,11 @@ parser.add_argument("--attitude_extreme_frac", type=float, default=0.5,
                          "(the rest stay mild 0.09). V6/V7 at 0.5 fixed the stress axis "
                          "but regressed the nominal s2 cell 1.7-4x — the mix starves "
                          "precision-tracking practice. Lower = more nominal-friendly.")
+parser.add_argument("--fluid_scale_fixed", type=str, default="",
+                    help="E2b' plant-specific fine-tune: FIXED fluid-coefficient scales, "
+                         "'s' or 'am,ld,qd' (e.g. '1.5' or '1.5,0.7,0.7'). Deterministic "
+                         "plant shift — the Laguna-Seca analogue: one specific new plant to "
+                         "adapt to, unlike --dr_fluid's per-segment random redraw.")
 parser.add_argument("--dr_fluid", type=float, default=0.0,
                     help="V5: per-segment fluid-coefficient DR half-range (added mass, "
                          "linear/quadratic damping scaled by U(1-r, 1+r) each segment; the "
@@ -229,7 +234,13 @@ def main() -> None:
         """Random (radius, bearing, depth, attitude, phase) so a step budget buys coverage."""
         env.reset()
         env.episode_length_buf[:] = 0
-        if args_cli.dr_fluid > 0.0:
+        if args_cli.fluid_scale_fixed:
+            v = [float(x) for x in args_cli.fluid_scale_fixed.split(",")]
+            am, ld, qd = (v * 3)[:3] if len(v) == 1 else v
+            sc = lambda x: torch.full((1,), x, device=dev)  # noqa: E731
+            env._hydro.scale_parameters(ALL, added_mass=sc(am),
+                                        linear_damping=sc(ld), quadratic_damping=sc(qd))
+        elif args_cli.dr_fluid > 0.0:
             # V5: same scale_parameters tensor path DORAEMON uses — scales are relative to
             # the immutable base snapshot, so per-segment redraws never compound.
             lo, hi = 1.0 - args_cli.dr_fluid, 1.0 + args_cli.dr_fluid
