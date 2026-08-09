@@ -1,0 +1,41 @@
+# [부록/여력 시 전용 — 기본 실행 플랜에서 제외됨 (docs/experiments/competitor_framework_plan.md §10)]
+# E4 sensitivity analysis, mirroring SSI-MPC paper §V-C (arXiv:2407.04143):
+# grid over the number of random features (their M) and the learning rate (their eta),
+# one variable per condition family with the other fixed — exactly their Fig. 4 design.
+# Their grid: M in {50,125,250,500,1000}, eta in {0.001,...,1}; ours keeps the same
+# spirit at wallscan scale (n_rf around the upstream default 100). 5 trials per
+# condition matches their quadrotor protocol (5 runs per condition).
+# Figures: error-over-time per condition (F4 style), cumulative objective vs lr,
+# solve-time vs n_rf table from controller_cost (their Table II).
+exp: e4_ssi_sens
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  tam: fixed
+
+conditions:
+  # --- lr sweep at fixed n_rf=100 (their Fig. 4c: eta sweep at M=250) ---
+  lr0001: {ssi_lr: 0.001}
+  lr001: {ssi_lr: 0.01}
+  lr005: {ssi_lr: 0.05}
+  lr01: {ssi_lr: 0.1}
+  lr04: {ssi_lr: 0.4}
+  lr10: {ssi_lr: 1.0}
+  # --- n_rf sweep at fixed lr (their Fig. 4b: M sweep at eta=0.4) ---
+  # lr fixed to the attempt-2 tuned value (trial 87) per the note above
+  m25: {ssi_n_rf: 25, ssi_lr: 0.14733286466312384}
+  m50: {ssi_n_rf: 50, ssi_lr: 0.14733286466312384}
+  m100: {ssi_n_rf: 100, ssi_lr: 0.14733286466312384}
+  m250: {ssi_n_rf: 250, ssi_lr: 0.14733286466312384}
+  m500: {ssi_n_rf: 500, ssi_lr: 0.14733286466312384}
+
+methods:
+  ssi:
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_kernel_std: 0.18398034704266503   # <- ssi_mpc attempt-2 (re-based) trial 87
+
+seeds: [0, 1, 2, 3, 4]

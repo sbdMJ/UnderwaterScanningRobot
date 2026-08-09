@@ -1,0 +1,11 @@
+{
+  "trials": 103,
+  "episodes": 106,
+  "env_steps": 477000,
+  "wall_clock_s": 6479.048798555952,
+  "method": "ssi_mpc",
+  "search_steps": 4500,
+  "rescore_steps": 9000,
+  "sampler": "TPE",
+  "sampler_seed": 0
+}

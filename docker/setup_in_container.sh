@@ -49,12 +49,20 @@ $PY -m pip install -e "$REPO/marinelab"
 # isaaclab_tasks / isaaclab.envs pull in `pxr` (USD python bindings), which Isaac
 # Sim only puts on sys.path once AppLauncher has booted the app -- so importing
 # them standalone fails by design. End-to-end verification is `play.py` instead.
+# marinelab is special-cased: its __init__ eagerly imports tasks -> isaaclab.utils
+# -> pxr, so pre-app it can only fail on pxr; any OTHER import error is a real
+# install problem and still fails the build.
 echo "==> verifying imports (pre-app-launch subset)"
 $PY -c '
 import importlib
 for m in ("isaaclab", "isaaclab_rl", "rsl_rl", "flatdict", "marinelab.core.parameters"):
-    importlib.import_module(m)
-    print("ok:", m)
+    try:
+        importlib.import_module(m)
+        print("ok:", m)
+    except ModuleNotFoundError as e:
+        if e.name != "pxr":
+            raise
+        print("ok (deferred - needs pxr, importable only after app launch):", m)
 '
 
 echo "==> restoring host ownership on the bind-mounted repo"

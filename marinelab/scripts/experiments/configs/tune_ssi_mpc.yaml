@@ -1,0 +1,34 @@
+# §6 unified tuning — SSI-MPC (E1 method ④), same pipeline/budget as tune_bo_nmpc.yaml.
+# Cost weights are INHERITED from the BO result (§6: only the adaptation axis is tuned);
+# run tune_bo_nmpc first. n_rf fixed at the upstream default (100).
+#
+# Attempt 2 (2026-08-08): re-based + multi-seed. Attempt 1 (docs/experiments/tuning_history/ssi_tuning_history.md)
+# was invalidated on two counts: it inherited the OVERFIT BO attempt-2 weights (E1 showed
+# SSI == BO-static per seed, i.e. performance was dominated by the inherited weights),
+# and it scored every trial on the single env seed 0. inherit_weights now resolves to the
+# BO attempt-3 result (gate PASSED vs nominal on E2, 2026-08-08); seeds mirror the
+# attempt-3 protocol and stay disjoint from the evaluation seeds (E1: 0-4, E2: 0-2).
+method: ssi_mpc
+task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+tam: fixed
+state: gt
+seeds: [100, 101, 102]  # per-trial objective = mean over these (held-out from E1/E2)
+sampler_seed: 0
+inherit_weights: experimental_results/tuning/bo_nmpc/best_params.json
+
+trials: 100
+steps: 4500
+rescore_top_k: 3
+rescore_steps: 9000
+
+space:
+  lr:
+    size: 1
+    low: 1.0e-4
+    high: 1.0
+    log: true
+  kernel_std:
+    size: 1
+    low: 0.1
+    high: 10.0
+    log: true

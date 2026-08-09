@@ -1,0 +1,23 @@
+{
+ "cycles_mean": 1.163223413083501,
+ "wall_dist_err_cm": 8.858524618442177,
+ "tilt_heave_deg": 1.3422628557668232,
+ "tilt_sway_deg": 1.0310928313027992,
+ "crab_deg": 3.9907784812881513,
+ "s_hat_err_cm": 6.408620495585911,
+ "heave_speed_mps": 0.187175917675262,
+ "sway_speed_mps": 0.10359130267850324,
+ "step_dt": 0.02,
+ "d_ref_m": 1.5,
+ "terminations": {
+  "collided": 0
+ },
+ "score": {
+  "objective": 6.123210194309897
+ },
+ "controller_cost": {
+  "solve_ms_mean": 2.753510772698371,
+  "fail_frac": 0.0,
+  "saturated_frac": 0.02
+ }
+}

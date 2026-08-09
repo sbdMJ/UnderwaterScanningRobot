@@ -18,6 +18,15 @@ CACHE="$HOME/docker/isaac-sim"
 GUI=0
 if [ "${1:-}" = "--gui" ]; then GUI=1; shift; fi
 
+# GPU access: native Linux with nvidia-container-toolkit registers an "nvidia"
+# docker runtime; Docker Desktop (Windows/WSL2) has no such runtime and passes
+# the GPU through --gpus alone. Detect the runtime instead of hardcoding it —
+# an unconditional --runtime=nvidia hard-fails on Docker Desktop.
+GPU_ARGS=(--gpus all)
+if docker info --format '{{range $k, $v := .Runtimes}}{{$k}}{{"\n"}}{{end}}' 2>/dev/null | grep -qx nvidia; then
+  GPU_ARGS=(--runtime=nvidia --gpus all)
+fi
+
 mkdir -p "$CACHE"/cache/{kit,ov,pip,glcache,computecache} "$CACHE"/{logs,data,documents}
 
 # Only request a TTY when we actually have one, so this works from scripts too
@@ -67,7 +76,7 @@ fi
 
 docker run --rm "${TTY_FLAGS[@]}" \
   --user 0:0 \
-  --runtime=nvidia --gpus all \
+  "${GPU_ARGS[@]}" \
   --network=host \
   --shm-size=8g \
   -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y \

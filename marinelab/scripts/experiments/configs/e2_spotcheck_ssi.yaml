@@ -1,0 +1,25 @@
+# SSI attempt-2 mid-run spot check (62/100 trials): current best candidate (trial 38,
+# lr 0.1009, kernel_std 1.397, tuning-seed mean 286.1) evaluated on the held-out E2
+# seeds, dr50 only — same probe design as e2_spotcheck_interim.yaml (BO attempt 3).
+# Cost weights = BO attempt-3 best_params.json (the §6 inheritance this candidate was
+# tuned against). Results land in experimental_results/e2_interim/ (never the real e2).
+exp: e2_interim
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  dr50: {dr_fluid_scale: 0.50}
+
+methods:
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.10094578438900782
+    ssi_kernel_std: 1.397031716527068
+
+seeds: [0, 1, 2]
