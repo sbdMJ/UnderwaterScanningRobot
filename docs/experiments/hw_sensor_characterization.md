@@ -86,6 +86,7 @@ UKFM 채널은 이 케이던스와 fix 정확도로 모델링해야 한다 → `
 | measured (실측 노이즈+주기, UKFM 31.5 Hz) | 5,105 | 5,039 |
 | measured_aruco (UKFM 1.3 Hz, s-보정 없음) | 5,699 | 5,206 |
 | **measured_aruco_sfix (s-보정)** | **761 (1.09×GT)** | **999 (1.03×GT)** |
+| measured_aruco_sfix_vis7 (+가시성 7 m 한계) | 786 (1.13×GT) | 1,020 (1.05×GT) |
 
 실측 센서 모델은 φ RMSE를 1.4–2.4°→0.4–0.6°로 잡았지만 objective는 그대로 —
 **ŝ가 유일한 미보정 적분기**이기 때문이다 (`wall_frame_ekf.update_ukfm`의 H에 s행이
@@ -103,6 +104,14 @@ UKFM 채널은 이 케이던스와 fix 정확도로 모델링해야 한다 → `
 (1.3 Hz) 하에서 하드웨어 진입 게이트를 통과한다. 개별 시드 최대치는 ssi s0의 6.0×
 (18→109)이나 절대값이 작아 시드 분산 범위 안이다.
 
-남는 하드웨어 전제 두 가지: ① 실기체 UKFM/ArUco 체인이 fix의 절대 방위각(θ)을
-estimator에 전달할 것 (`SensorSample.ukfm` 3-튜플), ② 마커 가시성이 스캔 심도
-전 구간에서 122531 bag(≤3.8 m)과 동급일 것 — 실험 수조에서 확인 필요.
+남는 하드웨어 전제였던 두 가지도 해소됨 (2026-08-09):
+
+① **θ 전달 체인 구현 완료** — `control/hw_bridge.py`(순수, 네이티브 테스트) +
+`ros/pkrc_wallscan_bridge`(hero_ws용 rclpy 노드). `/ukfm/odom_validated`만 절대
+fix로 소비하고, fix를 (r, φ, θ) 3-튜플로 estimator에 넘긴다. 배선은
+`hw_bag_replay_estimator.py`로 122531 bag에 대해 검증 (PLUMBING OK).
+
+② **마커 가시성 실측 한계 7 m 반영 재검증** (`measured_aruco_sfix_vis7`,
+`ukfm_max_depth: 7.0` — z < 3 m에서 fix 상실, 스캔 하단 2 m 블라인드): ssi
+761→786 (+3%), nominal 999→1,020 (+2%), ŝ RMSE 최악 8.6 cm, 충돌 0. 블라인드
+밴드에서의 코스팅은 재획득 시 θ 보정이 되잡는 유계 드리프트로 확인. **E5 go.**

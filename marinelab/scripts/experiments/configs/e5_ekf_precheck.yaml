@@ -30,6 +30,13 @@ conditions:
   measured_aruco_sfix:
     sensors: hw2026bag_aruco
     ukfm_theta: true
+  # As sfix, with the MEASURED marker-visibility limit (7 m, robot team 2026-08-09): with
+  # the depth_below_surface gate the fix goes blind below z = 3 m, so the scan's bottom
+  # band (z_bottom = 1.0) coasts on dead reckoning. The E5 go/no-go condition.
+  measured_aruco_sfix_vis7:
+    sensors: hw2026bag_aruco
+    ukfm_theta: true
+    ukfm_max_depth: 7.0
 
 methods:
   nominal:

@@ -156,6 +156,8 @@ class SimSensorStream:
         scfg_cls = self._SCFG[opt.get("sensors", "placeholder")]
         self.scfg = scfg_cls(ukfm_gate=opt.get("ukfm_gate", "depth_below_surface"),
                              ukfm_surface_z=cfg.tank_height)
+        if "ukfm_max_depth" in opt:  # measured marker-visibility limit (e.g. 7 m, 2026-08-09)
+            self.scfg.ukfm_valid_max_depth = float(opt["ukfm_max_depth"])
         # Bias half-ranges are DR knobs (0 in Stage3); the estimator condition needs them on.
         # A 34 s bag cannot see per-run constants, so hw2026bag keeps the datasheet biases.
         if issubclass(scfg_cls, SensorCfgDatasheet):
