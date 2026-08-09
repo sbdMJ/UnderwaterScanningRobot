@@ -1,10 +1,9 @@
 # 스러스터 대응표와 u→전류 매핑 (Phase C-③, Step 0)
 
-> 2026-08-09 작성. 코드 근거: sim `PKRCThrusterCfgFixedTAM.allocation_matrix`
-> (`marinelab/marinelab/assets/pkrc/pkrc.py:190`), 실기체
-> `hero_ws/src/pkrc_control/pkrc_control/keyboard_control_teleop.py` (`self.tam` :513,
-> `thruster_polarity` :526, `mix_thrusters` :757).
-> **⚠ 아래 표의 heave 쌍은 실물 검증 전까지 가설이다 — §3의 프로토콜로 확정할 것.**
+> 2026-08-09 작성, **같은 날 벤치 검증으로 확정** (§3a). 코드 근거: sim
+> `PKRCThrusterCfgFixedTAM.allocation_matrix` (`marinelab/marinelab/assets/pkrc/pkrc.py:190`),
+> 실기체 `hero_ws/src/pkrc_control/pkrc_control/keyboard_control_teleop.py`
+> (`self.tam` :513, `thruster_polarity` :526, `mix_thrusters` :757).
 
 ## 1. 대응표 (컨트롤러 u 인덱스 → VESC)
 
@@ -12,14 +11,17 @@ sim u는 MPC allocation matrix의 열 순서, u=±1 ↔ ±40 N (`PlantParams.max
 실기체 전류 명령은 teleop의 `send_current(vesc_id, A)` 규약 (±5 A 하드클램프, 내부
 스케일 ×1000).
 
-| u idx | sim 기하 (TAM 열에서 유도) | 실기체 | VESC | teleop 극성 | 근거·상태 |
+| u idx | 확정 기하 (벤치 2026-08-09) | 실기체 | VESC | teleop 극성 | +전류→추력 (측정 관례*) |
 |--:|---|---|---|--:|---|
-| 0 | surge, y=+0.15 (Mz −0.15) | T1 surge_left | 0x151 | +1 | yaw 부호 패턴 일치 (teleop T1 yaw −) — **신뢰** |
-| 1 | surge, y=−0.15 (Mz +0.15) | T2 surge_right | 0x152 | +1 | yaw 부호 패턴 일치 — **신뢰** |
-| 2 | sway, x=+0.15 (Mz +0.15), z=−0.09 | T3 sway_left | 0x153 | +1 | yaw 부호 패턴 일치 — **신뢰** |
-| 3 | sway, x=−0.15 (Mz −0.15), z=−0.09 | T4 sway_right | 0x154 | **−1** | 모터 회전방향 반대 (teleop 주석) — **신뢰** |
-| 4 | heave, y=+0.16 (Mx +0.16) | T5 "수직 상" | 0x155 | +1 | **미검증 — §2 불일치** |
-| 5 | heave, y=−0.16 (Mx −0.16) | T6 "수직 하" | 0x156 | +1 | **미검증 — §2 불일치** |
+| 0 | surge, y=+0.15 (Mz −0.15) | T1 surge_left | 0x151 | +1 | − |
+| 1 | surge, y=−0.15 (Mz +0.15) | T2 surge_right | 0x152 | +1 | − |
+| 2 | sway 전방, x=+0.15 (Mz +0.15), z=−0.09 | T3 sway_front | 0x153 | +1 | + |
+| 3 | sway 후방, x=−0.15 (Mz −0.15), z=−0.09 | T4 sway_rear | 0x154 | **−1** | − |
+| 4 | heave **우현, y=−0.1475 (Mx −0.1475)** | T5 | 0x155 | +1 | − |
+| 5 | heave **좌현, y=+0.1475 (Mx +0.1475)** | T6 | 0x156 | +1 | + |
+
+*측정 관례와 판정은 §3a. surge/sway 팔(±0.15, −0.09)은 미실측 — sim 값 유지, 줄자
+실측 시 갱신.
 
 ## 2. 발견된 불일치 — heave 쌍의 기하학
 
@@ -34,7 +36,35 @@ sim u는 MPC allocation matrix의 열 순서, u=±1 ↔ ±40 N (`PlantParams.max
   실측값으로 바꾸면 컨트롤러/시뮬 재검증까지 그대로 돈다 (sim 재검증: 교체한 TAM으로
   e5_ekf 셀 재실행).
 
-## 3. 실물 검증 프로토콜 (벤치, ~30분)
+## 3a. 벤치 검증 결과 (2026-08-09, 실측 완료)
+
+측정 관례: 사진(1786272580914.jpg) 시점에서 CW 회전 = 그 스러스터의 "양의 방향".
+전류 부호 → "양의 방향" 추력: T1 −, T2 −, T3 +, T4 −, T5 −, T6 +.
+
+**판정 1 — teleop 정합: 전 항목 일치.** teleop의 축 명령별 전류 부호와 조합하면
+모든 명령이 설계 의도대로 나온다: 전진/우현/하강 명령은 쌍 내 동방향 추력(기생
+요/롤 없음), 요 명령은 반대방향 커플 (surge 라우팅과 sway 라우팅 모두). T4 극성
+반전(−1)과 heave 쌍의 TAM 부호(∓1)가 배선/프로펠러 반전을 정확히 상쇄함을 확인.
+측정자의 "양의 방향"은 body 기준 (서지 후방 / 스웨이 우현 / 히브 하강)에 대응 —
+관례 차이일 뿐 모순 없음.
+
+**판정 2 — heave 쌍 기하: sim 구조 확정, 수치 2건 수정.**
+- 원통 **양옆 나란한 좌/우 쌍** (대향 아님) → 롤 권한 있음, FixedTAM 틸트 보상
+  구조 유효. teleop TAM의 Fz(−1/+1)는 기하가 아니라 배선 극성이었음.
+- **T5(0x155) = 우현**(y=−0.1475), T6(0x156) = 좌현(+0.1475). 축간 거리 실측
+  29.5 cm → 팔 0.1475 m (sim 가정 0.16 m, 그리고 sim은 u4에 +팔을 배정해 좌/우도
+  뒤집혀 있었음). → `pkrc_plant_fixed_tam.json` Mx행을 (u4 −0.1475, u5 +0.1475)로
+  수정 완료, 테스트로 고정.
+- sim 쪽 asset(`PKRCThrusterCfgFixedTAM`)은 시뮬 자체로 일관되므로 즉시 수정하지
+  않음. 단 zero-shot 전이 충실도를 높이려면 sim TAM도 실측치로 바꾸고 e5 재검증이
+  필요 — 별도 결정 사항으로 남김 (기존 셀들과의 비교 가능성이 깨짐).
+
+**도출 — mapper 부호 확정**: sim u(+x 전진/+y 좌현/+z 상승) → teleop 명령 공간
+`SIM_TO_TELEOP_SIGN = (+1, +1, −1, −1, +1, −1)` (`thrust_current_map.py`, 테스트 고정).
+남은 절대부호 전제는 teleop의 실운용 사실 3개(UP=전진, 좌우키=좌현/우현 — 코드
+주석의 실기 검증, w=상승) — 첫 수중 depth-hold 시험에서 자연 검증된다.
+
+## 3. 실물 검증 프로토콜 (벤치, ~30분) — 완료, §3a 참조
 
 `thruster_test.py`(전류 스텝 기능 내장, ±5 A 클램프)로 스러스터 1기씩:
 

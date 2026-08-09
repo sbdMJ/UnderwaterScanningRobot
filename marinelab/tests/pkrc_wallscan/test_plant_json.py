@@ -32,3 +32,12 @@ def test_committed_export_carries_the_fixed_tam_signature():
     assert B.shape == (6, 6)
     assert np.all(B[4] == 0.0), "My row must be zero (heave pair at x=0 — fixed TAM)"
     assert B[3, 2] == B[3, 3] == 0.09, "sway arm lives in Mx on the fixed TAM"
+
+
+def test_heave_roll_arms_match_the_bench_survey():
+    """2026-08-09 bench: T5 (u4) is the STARBOARD heave thruster and the pair sits
+    29.5 cm apart, so the roll arm is -0.1475 on u4 and +0.1475 on u5 (was the sim
+    guess of +/-0.16 with the sides swapped)."""
+    B = np.asarray(PlantParams.from_json(_JSON).allocation_matrix)
+    assert B[3, 4] == -0.1475, "u4 -> T5 (starboard, y = -0.1475)"
+    assert B[3, 5] == +0.1475, "u5 -> T6 (port, y = +0.1475)"

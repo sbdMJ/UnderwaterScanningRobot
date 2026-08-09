@@ -3,19 +3,29 @@
 import numpy as np
 import pytest
 
-from marinelab.control.thrust_current_map import ThrustCurrentMap
+from marinelab.control.thrust_current_map import SIM_TO_TELEOP_SIGN, ThrustCurrentMap
+
+NO_SIGN = (1.0,) * 6
 
 
 def test_uncalibrated_full_scale_matches_the_teleop_manual_currents():
-    m = ThrustCurrentMap()
+    m = ThrustCurrentMap(sign=NO_SIGN)
     amps = m.map([1.0, -1.0, 1.0, -1.0, 1.0, -1.0])
     assert not m.calibrated
     assert list(amps) == [3.0, -3.0, 3.0, -3.0, 5.0, -5.0]
 
 
+def test_default_sign_translates_sim_axes_into_teleop_command_space():
+    """Bench 2026-08-09: sim +y (port) needs a NEGATIVE teleop sway command on T3/T4,
+    and sim +z (up) is teleop heave DOWN on T6 — the (+,+,-,-,+,-) translation."""
+    assert ThrustCurrentMap().sign == SIM_TO_TELEOP_SIGN == (1.0, 1.0, -1.0, -1.0, 1.0, -1.0)
+    amps = ThrustCurrentMap().map([1.0] * 6)
+    assert list(np.sign(amps)) == [1.0, 1.0, -1.0, -1.0, 1.0, -1.0]
+
+
 def test_calibrated_path_converts_newtons_through_the_thrust_constant():
     # k = 10 N/A everywhere: u=0.5 -> 20 N -> 2 A
-    m = ThrustCurrentMap(newton_per_amp=(10.0,) * 6, max_thrust=40.0)
+    m = ThrustCurrentMap(sign=NO_SIGN, newton_per_amp=(10.0,) * 6, max_thrust=40.0)
     amps = m.map([0.5] * 6)
     assert m.calibrated
     assert amps == pytest.approx([2.0] * 6)
@@ -25,8 +35,7 @@ def test_calibrated_path_converts_newtons_through_the_thrust_constant():
 
 
 def test_order_remap_moves_sim_channels_into_vesc_slots():
-    # pretend bench verification found sim heave pair swapped vs T5/T6
-    m = ThrustCurrentMap(order=(0, 1, 2, 3, 5, 4))
+    m = ThrustCurrentMap(sign=NO_SIGN, order=(0, 1, 2, 3, 5, 4))
     amps = m.map([0.0, 0.0, 0.0, 0.0, 1.0, -1.0])
     assert amps[4] == pytest.approx(-5.0) and amps[5] == pytest.approx(5.0)
 

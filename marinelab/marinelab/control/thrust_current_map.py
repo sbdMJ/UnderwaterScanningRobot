@@ -27,13 +27,24 @@ from dataclasses import dataclass, field
 import numpy as np
 
 #: u index (sim TAM column) -> VESC slot (T1..T6), per the Step-0 correspondence table.
-#: Identity until the bench verification protocol says otherwise.
+#: Bench-verified 2026-08-09: identity holds.
 SIM_TO_VESC_ORDER = (0, 1, 2, 3, 4, 5)
+
+#: sim axis convention -> teleop command sign, derived from the 2026-08-09 bench run
+#: anchored on teleop's proven absolute behaviours (UP drives forward, LEFT drives port —
+#: the sway inversion is already absorbed at teleop's key layer — and depth-hold works,
+#: fixing heave+ = descend). sim wants +x fwd / +y port / +z up per pair; teleop's command
+#: space is +surge fwd / +sway starboard / +heave down, and the teleop auto path applies
+#: its own wiring polarity on top, so this is axis translation only, not wiring.
+SIM_TO_TELEOP_SIGN = (1.0, 1.0, -1.0, -1.0, 1.0, -1.0)
 
 
 @dataclass
 class ThrustCurrentMap:
     order: tuple[int, ...] = SIM_TO_VESC_ORDER
+    #: per-thruster sign translating the sim axis convention into teleop command space
+    #: (teleop's wiring polarity is applied downstream by teleop itself).
+    sign: tuple[float, ...] = SIM_TO_TELEOP_SIGN
     #: teleop's manual full-scale currents (A) — the uncalibrated fallback scale.
     amps_at_full: tuple[float, ...] = (3.0, 3.0, 3.0, 3.0, 5.0, 5.0)
     #: hard per-thruster clamp (A); teleop clamps again, this keeps the topic sane too.
@@ -60,6 +71,7 @@ class ThrustCurrentMap:
         Polarity is NOT applied here — that is wiring knowledge and stays in teleop.
         """
         u = np.clip(np.asarray(u, dtype=float).reshape(6), -1.0, 1.0)
+        u = u * np.asarray(self.sign, dtype=float)
         if self.newton_per_amp is not None:
             k = np.asarray(self.newton_per_amp, dtype=float)
             amps_sim = u * self.max_thrust / k
