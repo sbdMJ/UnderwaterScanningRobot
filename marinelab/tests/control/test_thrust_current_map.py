@@ -3,7 +3,11 @@
 import numpy as np
 import pytest
 
-from marinelab.control.thrust_current_map import SIM_TO_TELEOP_SIGN, ThrustCurrentMap
+from marinelab.control.thrust_current_map import (
+    SIM_TO_TELEOP_SIGN,
+    ThrustCurrentMap,
+    fit_thrust_constant,
+)
 
 NO_SIGN = (1.0,) * 6
 
@@ -48,3 +52,32 @@ def test_u_is_clamped_before_conversion():
 def test_bad_order_is_rejected():
     with pytest.raises(ValueError):
         ThrustCurrentMap(order=(0, 0, 2, 3, 4, 5))
+
+
+def test_fit_recovers_the_thrust_constant_from_clean_bollard_data():
+    amps = [0.5, 1.0, 1.5, 2.0]
+    k_true = 2.1
+    k, resid = fit_thrust_constant(amps, [k_true * a for a in amps])
+    assert k == pytest.approx(k_true)
+    assert resid == pytest.approx(0.0, abs=1e-12)
+
+
+def test_fit_works_on_signed_reverse_direction_samples():
+    # reverse-direction rows carry negative amps; the fit uses magnitudes
+    k, _ = fit_thrust_constant([-0.5, -1.0, -2.0], [1.0, 2.0, 4.0])
+    assert k == pytest.approx(2.0)
+
+
+def test_fit_flags_a_deadzone_point_via_the_worst_residual():
+    # 0.5 A sits in the stiction region and reads low; the flag must exceed 10%
+    amps = [0.5, 1.0, 1.5, 2.0]
+    f = [0.5 * 2.0 * 0.5, 2.0, 3.0, 4.0]  # first point at half the true thrust
+    _, resid = fit_thrust_constant(amps, f)
+    assert resid > 0.10
+
+
+def test_fit_rejects_degenerate_input():
+    with pytest.raises(ValueError):
+        fit_thrust_constant([], [])
+    with pytest.raises(ValueError):
+        fit_thrust_constant([0.0, 0.0], [1.0, 2.0])

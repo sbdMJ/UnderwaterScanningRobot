@@ -68,9 +68,11 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 - [x] **heave 쌍 기하 벤치 검증 (2026-08-09)**: 좌/우 나란한 쌍 확정(롤 권한 유지),
       T5=우현·팔 0.1475 m 실측 → plant JSON Mx행 수정(부호 배정도 정정), mapper 부호
       `(+,+,−,−,+,−)` 확정, teleop 정합 전 항목 일치 — `thruster_mapping.md` §3a
-- [ ] **Step 1–2 캘리브레이션 (로봇)**: T200 데이터시트 1차값 → bollard pull 실측 →
-      `newton_per_amp` 파라미터 + `pkrc_plant_fixed_tam.json`의 `max_thrust` 정합.
-      캘리브레이션 전에는 teleop 수동 스케일(저대역 시험만).
+- [ ] **Step 1–2 캘리브레이션 (로봇)**: bollard pull 실측 → `newton_per_amp` 파라미터
+      + `pkrc_plant_fixed_tam.json`의 `max_thrust` 정합. 프로토콜·데이터 처리 준비 완료
+      (2026-08-09): [`thruster_mapping.md`](thruster_mapping.md) §4a + `hw_thrust_calibrate.py`
+      (CSV → k_i 피팅, 데드존 플래그, max_thrust 제안). 실측만 남음 — 캘리브레이션
+      전에는 teleop 수동 스케일(저대역 시험만).
 - [ ] (선택) sim asset TAM도 실측치로 갱신 + e5 재검증 — 기존 셀 비교 가능성과
       트레이드오프, 별도 결정
 

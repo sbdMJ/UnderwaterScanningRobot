@@ -80,3 +80,23 @@ class ThrustCurrentMap:
         out = np.zeros(6)
         out[self._order_idx] = amps_sim
         return np.clip(out, -np.asarray(self.amps_limit), np.asarray(self.amps_limit))
+
+
+def fit_thrust_constant(amps, newtons) -> tuple[float, float]:
+    """Through-origin least squares fit of the per-thruster thrust constant k [N/A].
+
+    Bollard-pull data reduction (thruster_mapping.md §4a): thrust and torque both scale
+    ~rpm², so under VESC current (torque) control F = k·I through the origin. Returns
+    ``(k, worst_frac_residual)`` — the worst |F − k·I|/|F| over the samples. A residual
+    above ~0.1 usually means the lowest-current point sits in the stiction/deadzone
+    region and should be dropped and refit.
+    """
+    a = np.abs(np.asarray(amps, dtype=float).reshape(-1))
+    f = np.abs(np.asarray(newtons, dtype=float).reshape(-1))
+    if a.size != f.size or a.size == 0:
+        raise ValueError("amps and newtons must be equal-length, non-empty")
+    if np.dot(a, a) == 0.0:
+        raise ValueError("all current samples are zero — nothing to fit")
+    k = float(np.dot(f, a) / np.dot(a, a))
+    resid = np.abs(f - k * a) / np.maximum(f, 1e-9)
+    return k, float(np.max(resid))
