@@ -15,6 +15,7 @@
 | ⑤ | `docs/experiments/tuning_history/bo_tuning_history.md` / `docs/experiments/tuning_history/ssi_tuning_history.md` | 튜닝 여정 (논문 실험 섹션 소스) |
 | ⑥ | `docs/experiments/validation_report.md` | 결과 타당성 검증 (문헌 패턴 P1–P6 대조) |
 | ⑦ | `docs/diff_wmpc_port_todo.md` | **다음 작업** — diff 이식→실험 완료 단계별 TODO |
+| ⑧ | `docs/research/domain_comparison.md` / `docs/research/diffwmpc_domain_adaptations.md` | 부모 논문 대비 도메인·방법 대조 + 향후 concern (C-1~C-9) |
 | 참조 | `marinelab/scripts/experiments/README.md`, `docker/README.md`, `CLAUDE.md` | 러너 사용법 / 호스트 런타임 / 세션 규칙 |
 
 ## 2. 완료된 작업 (experiments_plan.md · work_directives 대응 체크리스트)
