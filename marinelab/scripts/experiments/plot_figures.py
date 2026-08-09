@@ -89,6 +89,8 @@ def main() -> None:
     p.add_argument("--metrics", nargs="+", default=DEFAULT_F1_METRICS, help="f1 panels")
     p.add_argument("--metric", default="score.objective", help="f3/f5 y-axis metric key")
     p.add_argument("--ylabel", default=None, help="f3/f5 y-axis label (default: metric key)")
+    p.add_argument("--logy", action="store_true", default=False,
+                   help="f3: log y-scale (PPO's 8-env objective dwarfs the MPC methods)")
     p.add_argument("--cond", default=None, help="condition (f1/f2/f4/f5)")
     p.add_argument("--seed", type=int, default=0, help="trajectory seed (f2/f4)")
     p.add_argument("--t-event", type=float, default=None, help="f4 event marker [s]")
@@ -107,7 +109,7 @@ def main() -> None:
         paths = F.fig_trajectory(_cases_f2(root, cond, args.seed), out)
     elif args.fig == "f3":
         paths = F.fig_sweep(_summary(root, [args.metric]), args.metric, out,
-                            ylabel=args.ylabel)
+                            ylabel=args.ylabel, logy=args.logy)
     elif args.fig == "f4":
         cond = args.cond or "step"
         paths = F.fig_timeseries(_cases_f4(root, cond), out, t_event=args.t_event)

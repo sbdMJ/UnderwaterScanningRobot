@@ -167,7 +167,8 @@ def cond_level(cond: str) -> float:
 
 
 def fig_sweep(summary: dict, metric: str, out: str, *, level_map: dict[str, float] | None = None,
-              ylabel: str | None = None, xlabel: str = "Perturbation level [%]") -> list[str]:
+              ylabel: str | None = None, xlabel: str = "Perturbation level [%]",
+              logy: bool = False) -> list[str]:
     level_map = level_map or {c: cond_level(c) for (_m, c) in summary}
     fig, ax = plt.subplots(figsize=(3.6, 2.9))
     rng = np.random.default_rng(0)
@@ -186,9 +187,14 @@ def fig_sweep(summary: dict, metric: str, out: str, *, level_map: dict[str, floa
         finite = np.isfinite(means)
         ax.plot(np.asarray(levels)[finite], means[finite], marker=_marker(m), ms=5,
                 color=_color(m), mec="black", mew=0.4, label=_label(m), zorder=3)
-        ax.fill_between(np.asarray(levels)[finite], (means - sds)[finite],
+        lo = means - sds
+        if logy:  # keep the band drawable on a log axis (mean-SD can cross zero)
+            lo = np.maximum(lo, means * 0.02)
+        ax.fill_between(np.asarray(levels)[finite], lo[finite],
                         (means + sds)[finite], color=_color(m), alpha=0.15,
                         linewidth=0, zorder=2)
+    if logy:
+        ax.set_yscale("log")
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel or metric)
     ax.legend(loc="best")
