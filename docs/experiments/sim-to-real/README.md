@@ -39,17 +39,21 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | measured_aruco_sfix (s-보정) | 761 | 999 |
 | **measured_aruco_sfix_vis7 (+7 m 한계)** | **786 (1.13×GT)** | **1,020 (1.05×GT)** |
 
-## 2. 진행 중 — Phase C-② 컨트롤러 노드
+## 2. 완료 — Phase C-② 컨트롤러 노드 (2026-08-09)
 
 - [x] 순수 코어 `WallScanControlLoop` 추출 (`control/scan_loop.py`): 상태머신 + 레퍼런스
       preview + 컨트롤러 step을 한 객체로 — **시뮬(`_sim_loop`)과 하드웨어 노드가 같은
       코드를 호출**하도록. §8 폐루프 네이티브 테스트 3개 (조립기→EKF→루프→컨트롤러
       한 틱이 시뮬레이터 없이 돈다).
 - [x] `_sim_loop.run_mpc_cell`을 코어 호출로 교체 (동작 보존 리팩토링)
-- [ ] **회귀 스모크 진행 중**: sfix s4 셀 재실행 → 기록치 96.7 재현 확인
-- [ ] `wallscan_controller` ROS 노드: `/wallscan/state`(+estimator_debug의 s_hat) 구독
-      → 코어 step → `/wallscan/u` 발행. 안전장치: 상태 stale 시 zero-thrust,
-      `/wallscan/enable` 게이트 (teleop이 기본 권한 유지)
+- [x] **회귀 스모크 통과**: sfix s4 재실행 96.72 vs 기록치 96.71 (+0.015%,
+      estimator 통계 소수 4자리 동일)
+- [x] `wallscan_controller` ROS 노드: `/wallscan/state`(+estimator_debug의 ŝ) 구독
+      → 코어 step → `/wallscan/u` 발행. 안전장치: `/wallscan/enable` 기본 OFF,
+      enable 상승엣지에 현재 심도로 재앵커, 상태 stale/컨트롤러 예외 시 zero-thrust.
+- [x] plant 파라미터 sim→하드웨어 전달: `PlantParams.to_json/from_json` +
+      권위 값 export 커밋 (`marinelab/config/pkrc_plant_fixed_tam.json`, FixedTAM) +
+      라운드트립·TAM 시그니처 테스트
 
 ## 3. 남은 계획
 

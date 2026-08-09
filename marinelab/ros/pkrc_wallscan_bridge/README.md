@@ -48,7 +48,26 @@ ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
   fix가 끊긴다 — 그 구간에서 s는 DVL 추측항법으로 코스팅하며, 시뮬 재검증
   (`e5_ekf_precheck.yaml`의 vis7 조건)이 이 블라인드 구간 포함 성능을 판정한다.
 
-## 남은 통합 단계 (Phase C 이후)
+## 컨트롤러 노드 (`wallscan_controller`)
 
-- 컨트롤러 노드(NMPC/SSI + scan_state_machine)가 `/wallscan/state` 구독 → `u[-1,1]` 발행
-- `u` → VESC 전류 매핑 (thruster_test.py 곡선), teleop auto 모드 + 키보드 오버라이드
+`/wallscan/state`(+`estimator_debug`의 ŝ)를 구독해 순수 코어 `WallScanControlLoop`
+(시뮬 러너와 **동일 객체** — 회귀 셀로 +0.015% 재현 확인)를 돌리고 `/wallscan/u`
+(정규화 [-1,1] 6채널)를 발행한다.
+
+```bash
+# plant 파라미터는 sim이 export한 JSON (repo에 커밋됨)
+ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
+  -p method:=nominal \
+  -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_fixed_tam.json
+# SSI: -p method:=ssi -p params_json:=<BO 가중치 JSON>  (채택 하이퍼파라미터가 기본값)
+```
+
+안전 설계:
+- **`/wallscan/enable` (Bool)이 기본 OFF** — 켜기 전까지 u는 항상 0. 켜는 순간 현재
+  심도에 스캔을 앵커링. teleop 노드가 CAN을 소유하므로 최종 권한은 항상 키보드.
+- 상태 스트림이 0.5 s 이상 끊기면 zero-thrust + 경고. 컨트롤러 예외도 zero-thrust.
+- NMPC(acados)는 Jetson에 acados/casadi 빌드가 선행돼야 한다 (Phase D).
+
+## 남은 통합 단계
+
+- `u` → VESC 전류 매핑 (thruster_test.py 곡선), teleop auto 모드에서 `/wallscan/u` 소비

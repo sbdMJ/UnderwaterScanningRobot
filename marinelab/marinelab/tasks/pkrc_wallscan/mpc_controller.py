@@ -98,6 +98,31 @@ class PlantParams:
     max_thrust: float = 40.0
     allocation_matrix: tuple[tuple[float, ...], ...] = field(default_factory=tuple)
 
+    def to_json(self, path: str) -> None:
+        """Dump for the hardware side: the Jetson has no env to call :func:`from_env` on,
+        so the sim exports the authoritative values once and the vehicle loads the file
+        (``marinelab/config/pkrc_plant_fixed_tam.json`` is the committed export)."""
+        import dataclasses
+        import json
+
+        with open(path, "w") as f:
+            json.dump(dataclasses.asdict(self), f, indent=1)
+
+    @classmethod
+    def from_json(cls, path: str) -> PlantParams:
+        import json
+
+        with open(path) as f:
+            raw = json.load(f)
+        raw["rigid_body_inertia"] = tuple(raw["rigid_body_inertia"])
+        raw["coriolis_inertia"] = tuple(raw["coriolis_inertia"])
+        raw["added_mass"] = tuple(raw["added_mass"])
+        raw["linear_damping"] = tuple(raw["linear_damping"])
+        raw["quadratic_damping"] = tuple(raw["quadratic_damping"])
+        raw["center_of_buoyancy"] = tuple(raw["center_of_buoyancy"])
+        raw["allocation_matrix"] = tuple(tuple(r) for r in raw["allocation_matrix"])
+        return cls(**raw)
+
     @classmethod
     def from_env(cls, env) -> PlantParams:
         """Read the parameters off a constructed ``WallScanEnv`` (the authoritative source)."""

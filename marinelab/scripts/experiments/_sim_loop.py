@@ -37,13 +37,13 @@ from marinelab.control import (
     SensorSample,
     VehicleState,
     WallFrameStateEstimator,
+    WallScanControlLoop,
 )
-from marinelab.control.types import ScanReference
 from marinelab.experiments.env_variants import CurrentDriver, apply_fluid_dr_scale
 from marinelab.experiments.protocol import ExperimentCell
 from marinelab.experiments.scoring import ScoreAccumulator
 from marinelab.tasks.pkrc_wallscan import eval_metrics as em
-from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref, scan_state_machine as ssm
+from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref
 from marinelab.tasks.pkrc_wallscan.mpc_controller import PlantParams
 from marinelab.tasks.pkrc_wallscan.sensors import (
     SensorCfg, SensorCfgDatasheet, SensorCfgHW2026Bag, SensorCfgHW2026BagAruco, SensorRateGate,
@@ -273,10 +273,12 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     dev, dt = env.device, env.step_dt
     use_ekf = opt.get("state", "gt") == "ekf"
     scan_cfg = cfg.scan
-    state_sm = ssm.ScanState(1, device=dev)
+    # The controller-owned loop (state machine + preview + controller) is the shared
+    # sim/hardware core — the wallscan_controller ROS node drives the same object.
+    loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg,
+                               horizon=int(opt.get("horizon", 30)), device="cpu")
     s_gt = torch.zeros(1, device=dev)
     theta_prev = torch.zeros(1, device=dev)
-    cycles = torch.zeros(1, dtype=torch.long, device=dev)
     stream = SimSensorStream(cfg, opt, cell.seed) if use_ekf else None
     estimator = WallFrameStateEstimator(WallFrameEKFCfg(
         tank_radius=cfg.tank_radius,
@@ -293,17 +295,11 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     def reset_internal():
         pos, _, yaw = gt_pose()
         theta = torch.atan2(pos[:, 1], pos[:, 0])
-        state_sm.phase[:] = 0
-        state_sm.s_ref[:] = 0.0
-        state_sm.sway_dir[:] = 1.0
-        state_sm.z_hold[:] = 0.0
-        state_sm._hold[:] = 0
-        state_sm.z_ramp[:] = pos[:, 2]
-        state_sm.s_ramp[:] = 0.0
+        # z0 anchors the reference ramp at ground truth; the controller itself still
+        # resets from a zero state, exactly as before the loop extraction.
+        loop.reset(veh=None, z0=float(pos[0, 2]))
         s_gt[:] = 0.0
-        cycles[:] = 0
         theta_prev[:] = theta
-        ctl.reset(VehicleState.from_x13(np.zeros(13)))
         if use_ekf:
             stream.redraw_bias()
             estimator.reset(r0=float(torch.linalg.norm(pos[0, :2])),
@@ -337,30 +333,18 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             est_err["phi"].append(float(mref._wrap_to_pi(
                 torch.tensor(estimator.ekf.phi - truth["phi"]))))
             est_err["s"].append(estimator.s_hat - float(s_gt[0]))
-            z_sm = torch.tensor([veh.pos_w[2]], device=dev)
-            s_sm = torch.tensor([estimator.s_hat], device=dev)
-            theta_anchor, s_anchor = estimator.theta_hat, estimator.s_hat
+            s_hat, theta_hat = estimator.s_hat, estimator.theta_hat
         else:
             x13 = torch.cat([pos, quat,
                              env._robot.data.root_lin_vel_b,
                              env._robot.data.root_ang_vel_b], dim=-1)[0].cpu().numpy()
             veh = VehicleState.from_x13(x13, stamp=i * dt)
-            z_sm, s_sm = pos[:, 2], s_gt
-            theta_anchor, s_anchor = float(theta[0]), float(s_gt[0])
+            s_hat, theta_hat = float(s_gt[0]), float(theta[0])
 
-        z_ref, s_ref, _phase_sc, advanced = ssm.step(state_sm, z_sm, s_sm, scan_cfg, z_latch=z_sm)
-        cycles += (advanced & (state_sm.phase == 0)).long()
-        preview = mref.reference_preview(
-            state_sm.phase, state_sm.z_ramp, state_sm.s_ramp, state_sm.s_ref, state_sm.z_hold,
-            mpc_cfg, int(cell.options.get("horizon", 30)),
-        )
-        ref = ScanReference(
-            z_ref=preview["z_ref"][0].cpu().numpy(), s_ref=preview["s_ref"][0].cpu().numpy(),
-            v_tan_des=preview["v_tan_des"][0].cpu().numpy(),
-            v_z_des=preview["v_z_des"][0].cpu().numpy(),
-            theta_anchor=theta_anchor, s_anchor=s_anchor, phase=int(state_sm.phase[0]),
-        )
-        out = ctl.step(veh, ref)
+        out = loop.step(veh, s_hat=s_hat, theta_hat=theta_hat)
+        z_ref_f, s_ref_f = loop.refs
+        z_ref = torch.tensor([z_ref_f], device=dev)
+        s_ref = torch.tensor([s_ref_f], device=dev)
         for k, v in out.aux.items():  # per-step method diagnostics -> npz (aux_* keys)
             arr = np.atleast_1d(np.asarray(v, float))
             if arr.ndim == 1:
@@ -379,7 +363,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
         wall_dist = geometry.sonar_wall_distance(
             pos_n[:, :2], yaw_n, env._sonar_mount_nom, env._sonar_yaw_nom, cfg.tank_radius)
         log.record(
-            phase=state_sm.phase, cycles=cycles,
+            phase=loop.sm.phase, cycles=torch.tensor([loop.cycles], device=dev),
             searching=torch.zeros(1, dtype=torch.bool, device=dev),
             done=dones, terminated=env.reset_terminated, time_out=env.reset_time_outs,
             term_collided=env._term_collided, term_oob=env._term_oob, term_tilted=env._term_tilted,
@@ -393,7 +377,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             reset_internal()
             prev_z_ref = prev_s_ref = None
         if log_every and i % log_every == 0:
-            print(f"  t={i * dt:6.1f}s ph={int(state_sm.phase[0])} z={float(pos_n[0, 2]):5.2f} "
+            print(f"  t={i * dt:6.1f}s ph={loop.phase} z={float(pos_n[0, 2]):5.2f} "
                   f"s={float(s_gt[0]):+6.2f} solve={out.solve_ms:.1f}ms")
 
     extras = {"aux_arrays": {f"aux_{k}": np.stack(v) for k, v in aux_hist.items()}}
