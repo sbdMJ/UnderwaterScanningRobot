@@ -1,0 +1,33 @@
+# E4(a): ablation of the proposed diff-WMPC (plan §7, Table 2) — E1 protocol, 5 seeds.
+# Arms are conditions so one config covers the table:
+#   full       — adopted V8a policy, preview on (the paper configuration)
+#   nopreview  — same policy, horizon reference frozen to the stage-0 setpoint
+#                (runner-side frozen_ref; controllers cannot tell — types.ScanReference)
+#   wub500     — retrained with werr_ub 500 (vs 5000): does the ceiling matter?
+#   nosatskip  — retrained WITHOUT the saturation-skip (learner keeps zero-sensitivity
+#                steps; measured 2026-08: sensitivity is exactly 0 at saturation)
+# wub500/nosatskip train with the V8a recipe otherwise (60k, att 0.7 @ 20%).
+exp: e4_abl
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  # adopted checkpoint as the DEFAULT (lowest merge precedence): full/nopreview inherit
+  # it, wub500/nosatskip override it per condition. Keep ckpt out of the method entry —
+  # method-level keys would clobber the per-condition overrides.
+  ckpt: checkpoints/diff_wmpc/policy_final.pt
+
+conditions:
+  full: {}
+  nopreview: {frozen_ref: true}
+  wub500: {ckpt: checkpoints/dw_abl_wub500/policy_final.pt}
+  nosatskip: {ckpt: checkpoints/dw_abl_nosatskip/policy_final.pt}
+
+methods:
+  diff:
+    tam: fixed
+
+seeds: [0, 1, 2, 3, 4]

@@ -38,11 +38,11 @@
 
 | | nominal | BO | SSI | PPO | diff |
 |---|---|---|---|---|---|
-| E1 (5 seeds) | [x] | [x] 재실행 | [x] 재실행 | [x] | **[ ] 대기** |
-| E2 (3 DR × 3 seeds) | [x] | [x] | [x] | [x] (s1 충돌 포함) | **[ ] 대기** |
-| E2(b) fine-tune | — | — | — | — | **[ ] 미구현** |
-| E3 (2 조류 × 3 seeds) | [x] | (설계상 제외) | [x] | (설계상 제외) | **[ ] 대기** |
-| E4(a) ablation | — | — | — | — | **[ ] 설정 미작성** |
+| E1 (5 seeds) | [x] | [x] | [x] | [x] | [x] V8a |
+| E2 (3 DR × 3 seeds) | [x] | [x] | [x] | [x] (s1 충돌 포함) | [x] V8a (전 조건 1위) |
+| E2(b) fine-tune | — | — | — | — | [x] (dr75 +2.5%, 나머지 중립) |
+| E3 (2 조류 × 3 seeds) | [x] | (설계상 제외) | [x] | (설계상 제외) | [x] V8a |
+| E4(a) ablation | — | — | — | — | [x] Table 2 (preview +41%, 나머지 무차별) |
 | E4(b) 튜닝 비용 | [x] | [x] | [x] | W&B 기록 | [ ] 학습비용 수령 |
 | E4 부록 민감도 (11×5) | — | — | [x] | — | — |
 | E4(c) 추론 벤치 (Jetson) | [ ] | [ ] | [ ] | [ ] | [ ] |
@@ -51,7 +51,7 @@
 ### 그림·표
 - [x] Table 1/2/3 소스 (`tables/table.{csv,tex}` — e1/e2/e3/e4_ssi_sens)
 - [x] F1, F2, F3(log), F4, F6, F7, F8, F9, F10
-- [ ] F5 (zero-shot vs fine-tuned) — E2(b) 필요
+- [x] F5 (zero-shot vs fine-tuned)
 - [x] 결과 타당성 검증 보고서 (P1–P6 전부 충족)
 
 ## 3. 남은 작업 (우선순위 순)

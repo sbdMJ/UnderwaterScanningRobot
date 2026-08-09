@@ -5,12 +5,12 @@ bo,dr50,score.objective,3479.46,1986.05,3,1496.5;3473.32;5468.58
 bo,dr50,cycles_mean,2,0,3,2;2;2
 bo,dr75,score.objective,3447.56,1952.49,3,1498.65;3440.42;5403.6
 bo,dr75,cycles_mean,2,0,3,2;2;2
-diff,dr25,score.objective,4475.42,4039.63,3,1233.79;3191.5;9000.98
+diff,dr25,score.objective,2890.53,1557.54,3,1201.55;3199.85;4270.2
 diff,dr25,cycles_mean,2,0,3,2;2;2
-diff,dr50,score.objective,6311.04,7151.2,3,1252.97;3187.51;14492.6
+diff,dr50,score.objective,2822.36,1435.73,3,1236.53;3196.77;4033.79
 diff,dr50,cycles_mean,2,0,3,2;2;2
-diff,dr75,score.objective,inf,nan,3,1287.94;3206.13;inf
-diff,dr75,cycles_mean,1.33333,1.1547,3,2;2;0
+diff,dr75,score.objective,2788.85,1331.41,3,1295.2;3220.34;3851
+diff,dr75,cycles_mean,2,0,3,2;2;2
 nominal,dr25,score.objective,4234.04,1321.99,3,2994.54;4082.17;5625.41
 nominal,dr25,cycles_mean,2,0,3,2;2;2
 nominal,dr50,score.objective,4246.2,1117.12,3,3218.74;4084.51;5435.35

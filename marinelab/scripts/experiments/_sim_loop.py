@@ -321,6 +321,12 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             v_z_des=preview["v_z_des"][0].cpu().numpy(),
             theta_anchor=theta_anchor, s_anchor=s_anchor, phase=int(state_sm.phase[0]),
         )
+        if cell.options.get("frozen_ref"):
+            # E4(a) preview-off ablation (plan §7): same ScanReference object with the
+            # stage-0 setpoint repeated over the horizon — controllers cannot tell the
+            # difference, so the toggle stays runner-side (see types.ScanReference docstring).
+            for arr in (ref.z_ref, ref.s_ref, ref.v_tan_des, ref.v_z_des):
+                arr[1:] = arr[0]
         out = ctl.step(veh, ref)
         for k, v in out.aux.items():  # per-step method diagnostics -> npz (aux_* keys)
             arr = np.atleast_1d(np.asarray(v, float))

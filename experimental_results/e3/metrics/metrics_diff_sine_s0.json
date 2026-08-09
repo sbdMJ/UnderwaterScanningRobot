@@ -4,18 +4,18 @@
   "step_dt": 0.02,
   "scored_episode": 0,
   "scored_steps": 8998,
-  "tilt_heave_deg": 1.262054681777954,
-  "tilt_sway_deg": 0.16411273181438446,
-  "tilt_deg": 1.158337116241455,
-  "crab_deg": 0.08477780222892761,
+  "tilt_heave_deg": 1.2628072500228882,
+  "tilt_sway_deg": 0.16829518973827362,
+  "tilt_deg": 1.1596570014953613,
+  "crab_deg": 0.09426766633987427,
   "s_hat_err_cm": 0.0,
-  "heave_speed_mps": 0.20022569802784318,
-  "sway_speed_mps": 0.10015066211105238,
-  "heave_path_speed_mps": 0.20022569802784318,
-  "sway_path_speed_mps": 0.10015066211105238,
+  "heave_speed_mps": 0.2002311186719654,
+  "sway_speed_mps": 0.10017429553501978,
+  "heave_path_speed_mps": 0.2002311186719654,
+  "sway_path_speed_mps": 0.10017429553501978,
   "heave_legs_scored": 3,
   "sway_legs_scored": 4,
-  "wall_dist_err_cm": 10.177765041589737,
+  "wall_dist_err_cm": 10.173419117927551,
   "cycles_mean": 2.0,
   "cycles_per_env": [
     2.0
@@ -38,7 +38,7 @@
     "tilted": 0,
     "success": 0
   },
-  "exp": "e3",
+  "exp": "e3_v8a",
   "method": "diff",
   "cond": "sine",
   "seed": 0,
@@ -55,22 +55,22 @@
       "heading_deg": 0.0,
       "period": 30.0
     },
-    "ckpt": "checkpoints/diff_wmpc/policy_final.pt",
+    "ckpt": "checkpoints/dw_v8a_mix20/policy_final.pt",
     "device": "cuda:0"
   },
   "controller_cost": {
     "n_steps": 9000,
-    "solve_ms_mean": 10.024178771357079,
-    "solve_ms_p95": 16.5526526645408,
-    "solve_ms_max": 141.49239601101726,
+    "solve_ms_mean": 8.833134565143459,
+    "solve_ms_p95": 13.586987333837895,
+    "solve_ms_max": 128.59545400715433,
     "fail_frac": 0.0,
     "saturated_frac": 0.0064444444444444445
   },
   "score": {
-    "objective": 27.89955508701709,
+    "objective": 27.642233686312295,
     "collided": false,
     "scored_losses": [
-      27.89955508701709
+      27.642233686312295
     ]
   }
 }

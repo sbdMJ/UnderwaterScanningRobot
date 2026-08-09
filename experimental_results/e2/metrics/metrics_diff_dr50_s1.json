@@ -4,18 +4,18 @@
   "step_dt": 0.02,
   "scored_episode": 0,
   "scored_steps": 8998,
-  "tilt_heave_deg": 8.758805274963379,
-  "tilt_sway_deg": 8.430259704589844,
-  "tilt_deg": 8.728353500366211,
-  "crab_deg": 1.2224719524383545,
+  "tilt_heave_deg": 8.508092880249023,
+  "tilt_sway_deg": 8.23791217803955,
+  "tilt_deg": 8.483050346374512,
+  "crab_deg": 1.2355884313583374,
   "s_hat_err_cm": 0.0,
-  "heave_speed_mps": 0.19986497798536157,
-  "sway_speed_mps": 0.10047860892422227,
-  "heave_path_speed_mps": 0.19986497798536157,
-  "sway_path_speed_mps": 0.10047860892422227,
+  "heave_speed_mps": 0.200063819127367,
+  "sway_speed_mps": 0.10046447616025625,
+  "heave_path_speed_mps": 0.200063819127367,
+  "sway_path_speed_mps": 0.10046447616025625,
   "heave_legs_scored": 3,
   "sway_legs_scored": 4,
-  "wall_dist_err_cm": 15.720632672309875,
+  "wall_dist_err_cm": 15.668632090091705,
   "cycles_mean": 2.0,
   "cycles_per_env": [
     2.0
@@ -38,7 +38,7 @@
     "tilted": 0,
     "success": 0
   },
-  "exp": "e2",
+  "exp": "e2_v8a",
   "method": "diff",
   "cond": "dr50",
   "seed": 1,
@@ -50,22 +50,22 @@
     "num_envs": 1,
     "dr_fluid_scale": 0.5,
     "tam": "fixed",
-    "ckpt": "checkpoints/diff_wmpc/policy_final.pt",
+    "ckpt": "checkpoints/dw_v8a_mix20/policy_final.pt",
     "device": "cuda:0"
   },
   "controller_cost": {
     "n_steps": 9000,
-    "solve_ms_mean": 10.251582184237325,
-    "solve_ms_p95": 16.963314657914452,
-    "solve_ms_max": 132.0476980181411,
+    "solve_ms_mean": 8.977424368074733,
+    "solve_ms_p95": 14.878129003045592,
+    "solve_ms_max": 131.86429598135874,
     "fail_frac": 0.0,
-    "saturated_frac": 0.03155555555555556
+    "saturated_frac": 0.036444444444444446
   },
   "score": {
-    "objective": 3187.508791366085,
+    "objective": 3196.7656563420173,
     "collided": false,
     "scored_losses": [
-      3187.508791366085
+      3196.7656563420173
     ]
   }
 }

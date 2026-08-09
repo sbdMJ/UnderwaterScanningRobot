@@ -1,0 +1,26 @@
+# E2(b): quick online fine-tuning, parent paper's Monza->Laguna Seca adaptation analogue.
+# Each condition evaluates the checkpoint fine-tuned UNDER THAT condition's physics
+# (10k steps from the adopted V8a zero-shot policy, condition-matched dr_fluid +
+# attitude mix, Adam state carried over — train --resume_ckpt). Per-condition ckpt
+# lives on the CONDITION (merge order defaults < condition < method: the method entry
+# must not set ckpt or it would override all three).
+# F5: plot_figures.py f5 experimental_results/e2 experimental_results/e2b --names zero-shot fine-tuned
+exp: e2b
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  dr25: {dr_fluid_scale: 0.25, ckpt: checkpoints/dw_e2b_dr25/policy_final.pt}
+  dr50: {dr_fluid_scale: 0.50, ckpt: checkpoints/dw_e2b_dr50/policy_final.pt}
+  dr75: {dr_fluid_scale: 0.75, ckpt: checkpoints/dw_e2b_dr75/policy_final.pt}
+
+methods:
+  diff:
+    tam: fixed
+
+seeds: [0, 1, 2]

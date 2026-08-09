@@ -93,6 +93,17 @@ parser.add_argument("--preview_nodes", type=str, default="",
                          "weights BEFORE an event). Empty = original current-error-only "
                          "features. Example: '10,20,30'.")
 parser.add_argument("--ckpt", type=str, default=None, help="Evaluate this checkpoint (learning off).")
+parser.add_argument("--resume_ckpt", type=str, default=None,
+                    help="Load this checkpoint and CONTINUE learning (E2b online fine-tune: "
+                         "parent paper's 'quick online fine-tuning' — a short budget under the "
+                         "deployment condition's physics). Architecture is rebuilt from the "
+                         "checkpoint itself, so preview/hidden/history flags are ignored.")
+parser.add_argument("--werr_ub", type=float, default=5000.0,
+                    help="E4(a) ablation knob: upper bound of the error-weight range "
+                         "(plan compares 500 vs 5000). Fresh training only, not with --resume_ckpt.")
+parser.add_argument("--saturation_thresh", type=float, default=0.98,
+                    help="E4(a) ablation knob: learner skips steps with |u|>thresh (solver "
+                         "sensitivity is exactly zero there). Set >=10 to disable the skip.")
 parser.add_argument("--ckpt_dir", type=str, default=None)
 parser.add_argument("--ckpt_every", type=int, default=5000)
 parser.add_argument("--log_every", type=int, default=200)
@@ -170,15 +181,30 @@ def main() -> None:
     werr_lb = np.full(NE, 0.1)
     if args_cli.w_radial_floor > 0.0:
         werr_lb[[0, 6, 7]] = args_cli.w_radial_floor  # radial, head_x, head_y
-    policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
-                          werr_init=np.asarray(DEFAULT_WERR, float),
-                          wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb,
-                          preview_nodes=preview_nodes)
+    if args_cli.resume_ckpt is not None:
+        state = torch.load(args_cli.resume_ckpt, map_location="cpu")
+        policy = WeightPolicy.from_state_dict(state, NE, mpc.nu,
+                                              werr_init=np.asarray(DEFAULT_WERR, float),
+                                              wu_init=np.full(mpc.nu, DEFAULT_WU))
+        preview_nodes = tuple(int(k) for k in policy.preview_nodes.tolist())
+        feat_dim = policy.feat_dim
+        print(f"[diff-wmpc] RESUME from {args_cli.resume_ckpt} (learning ON, "
+              f"feat_dim={feat_dim}, preview={preview_nodes})")
+    else:
+        policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
+                              werr_init=np.asarray(DEFAULT_WERR, float),
+                              wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb,
+                              werr_ub=args_cli.werr_ub, preview_nodes=preview_nodes)
     print(f"[diff-wmpc] loss nodes {mpc.sens_nodes} "
           f"(= {[round(k * args_cli.dt_mpc, 2) for k in mpc.sens_nodes]} s ahead)  "
           f"radial/heading floor {args_cli.w_radial_floor}")
     learner = DiffWMPCLearner(policy, n_pglobal=mpc.n_pglobal, lr=args_cli.lr,
-                              batch_size=args_cli.batch_size, grad_clip=args_cli.grad_clip)
+                              batch_size=args_cli.batch_size, grad_clip=args_cli.grad_clip,
+                              saturation_thresh=args_cli.saturation_thresh)
+    if args_cli.resume_ckpt is not None:
+        state = torch.load(args_cli.resume_ckpt, map_location="cpu")
+        if "opt" in state:  # continue the Adam state too (fine-tune, not re-init)
+            learner.opt.load_state_dict(state["opt"])
     loss_cfg = WallScanLossCfg(max_thrust=prm.max_thrust)
     if args_cli.l_v_z is not None:
         loss_cfg.l_v_z = args_cli.l_v_z

@@ -1,0 +1,7 @@
+method,cond,metric,mean,sd,n_trials,values
+diff,dr25,score.objective,2897.62,1573.02,3,1203.83;3176.47;4312.57
+diff,dr25,cycles_mean,2,0,3,2;2;2
+diff,dr50,score.objective,2832.1,1434.46,3,1233.68;3255.2;4007.43
+diff,dr50,cycles_mean,2,0,3,2;2;2
+diff,dr75,score.objective,2720.01,1340.71,3,1187.67;3295.25;3677.11
+diff,dr75,cycles_mean,2,0,3,2;2;2
