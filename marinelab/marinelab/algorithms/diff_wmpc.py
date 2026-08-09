@@ -73,6 +73,33 @@ def _map_to_range(raw: torch.Tensor, lb: torch.Tensor, ub: torch.Tensor, *,
     return lb + (ub - lb) * s
 
 
+def policy_features(e_now: torch.Tensor, phase: float, *,
+                    z_ref=None, s_ref=None,
+                    preview_nodes=()) -> torch.Tensor:
+    """Single source of truth for the WeightPolicy input, shared by the trainer and the
+    deployment adapter — a feature-definition drift between the two is a silent behaviour
+    change with no error anywhere, so neither side is allowed its own copy.
+
+    Base features replicate the original design: the NE-dim wallscan error at the current
+    stage plus (sin, cos) of the scan phase. With ``preview_nodes`` (V1, 2026-08-09 —
+    parent paper Fig. 5/8: the policy must see the FUTURE reference to adapt weights
+    *before* an event, not after the error appears), the horizon setpoint deltas
+    ``z_ref[k]-z_ref[0]`` and ``s_ref[k]-s_ref[0]`` at those stage indices are appended:
+    they are exactly the "ramp is about to end / sway leg is coming" signals the solver
+    already gets via its own preview but the policy could not see.
+    """
+    ph = 2 * math.pi * float(phase) / 4.0
+    parts = [e_now.reshape(-1).float(),
+             torch.tensor([math.sin(ph), math.cos(ph)], dtype=torch.float32)]
+    nodes = [int(k) for k in preview_nodes]
+    if nodes:
+        z = torch.as_tensor(np.asarray(z_ref), dtype=torch.float32).reshape(-1)
+        s = torch.as_tensor(np.asarray(s_ref), dtype=torch.float32).reshape(-1)
+        idx = torch.tensor(nodes, dtype=torch.long).clamp_(0, z.numel() - 1)
+        parts += [z[idx] - z[0], s[idx] - s[0]]
+    return torch.cat(parts)
+
+
 class WeightPolicy(nn.Module):
     """Situation -> bounded diagonal MPC cost weights ``[w_err(ne), w_u(nu)]``.
 
@@ -92,10 +119,20 @@ class WeightPolicy(nn.Module):
     def __init__(self, feat_dim: int, ne: int, nu: int, *, history_len: int = 4, hidden: int = 128,
                  werr_init: np.ndarray | None = None, wu_init: np.ndarray | None = None,
                  werr_lb: float = 0.1, werr_ub: float = 5000.0,
-                 wu_lb: float = 5e-3, wu_ub: float = 5.0, log_scale: bool = True):
+                 wu_lb: float = 5e-3, wu_ub: float = 5.0, log_scale: bool = True,
+                 preview_nodes: tuple[int, ...] = ()):
         super().__init__()
         self.feat_dim, self.ne, self.nu = int(feat_dim), int(ne), int(nu)
         self.history_len = int(history_len)
+        # Look-ahead feature spec (V1). Registered as a buffer ONLY when active so it
+        # round-trips in new checkpoints, while pre-V1 checkpoints (no such key) still
+        # strict-load into a policy built without preview. `from_state_dict` reads this
+        # to rebuild the exact architecture from a checkpoint alone.
+        if preview_nodes:
+            self.register_buffer("preview_nodes",
+                                 torch.tensor([int(k) for k in preview_nodes], dtype=torch.long))
+        else:
+            self.preview_nodes = torch.zeros(0, dtype=torch.long)
         # Bounds may be per-entry: the 2026-07-31 collapse was w_radial falling to 2-3, and a
         # floor on just that entry is cheap insurance that costs nothing when it is not binding.
         #
@@ -137,6 +174,30 @@ class WeightPolicy(nn.Module):
 
     def reset_history(self) -> None:
         self._history = []
+
+    @classmethod
+    def from_state_dict(cls, state: dict, ne: int, nu: int, *,
+                        werr_init: np.ndarray | None = None,
+                        wu_init: np.ndarray | None = None) -> "WeightPolicy":
+        """Rebuild the exact architecture a checkpoint was trained with, then load it.
+
+        hidden / history_len / preview_nodes are NOT recoverable from ctor defaults —
+        loading a checkpoint into a differently-built policy either crashes (shape) or
+        silently changes the feature semantics. Everything needed is inferable from the
+        state_dict itself: fc1 gives (hidden, feat_dim*(history_len+1)), the optional
+        ``preview_nodes`` buffer gives the look-ahead spec (absent on pre-V1 ckpts).
+        """
+        sd = state["policy"] if "policy" in state else state
+        hidden, total_in = sd["fc1.weight"].shape
+        preview = tuple(int(k) for k in sd.get("preview_nodes", torch.zeros(0)).tolist())
+        feat_dim = ne + 2 + 2 * len(preview)
+        if total_in % feat_dim:
+            raise ValueError(f"fc1 input {total_in} is not a multiple of feat_dim {feat_dim} "
+                             f"(ne={ne}, preview={preview}) — wrong ne/nu for this checkpoint?")
+        policy = cls(feat_dim, ne, nu, history_len=total_in // feat_dim - 1, hidden=hidden,
+                     werr_init=werr_init, wu_init=wu_init, preview_nodes=preview)
+        policy.load_state_dict(sd)
+        return policy
 
     def forward(self, feat: torch.Tensor) -> torch.Tensor:
         """``feat``: (feat_dim,) detached features for this step. Returns (ne+nu,) weights."""

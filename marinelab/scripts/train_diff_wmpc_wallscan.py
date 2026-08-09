@@ -66,6 +66,20 @@ parser.add_argument("--lr", type=float, default=5e-4)
 parser.add_argument("--batch_size", type=int, default=10)
 parser.add_argument("--grad_clip", type=float, default=0.1)
 parser.add_argument("--history_len", type=int, default=4)
+parser.add_argument("--dr_fluid", type=float, default=0.0,
+                    help="V5: per-segment fluid-coefficient DR half-range (added mass, "
+                         "linear/quadratic damping scaled by U(1-r, 1+r) each segment; the "
+                         "MPC model stays nominal). Motivation, measured 2026-08-09: trained "
+                         "on the nominal plant, the policy pinned 83%% of its weights at the "
+                         "FLOOR in the out-of-distribution E2 dr75/s2 cell and collided at "
+                         "t=25.5 s — DR'd dynamics must be in-distribution. 0.75 covers the "
+                         "whole E2 sweep; 0 = original nominal-plant behaviour.")
+parser.add_argument("--preview_nodes", type=str, default="",
+                    help="Comma-separated horizon stage indices whose reference deltas are "
+                         "appended to the policy features (V1 look-ahead, parent paper "
+                         "Fig. 5/8: the policy must see the future reference to adapt "
+                         "weights BEFORE an event). Empty = original current-error-only "
+                         "features. Example: '10,20,30'.")
 parser.add_argument("--ckpt", type=str, default=None, help="Evaluate this checkpoint (learning off).")
 parser.add_argument("--ckpt_dir", type=str, default=None)
 parser.add_argument("--ckpt_every", type=int, default=5000)
@@ -87,7 +101,9 @@ import isaaclab_tasks  # noqa: F401
 
 import marinelab  # noqa: F401
 
-from marinelab.algorithms.diff_wmpc import DiffWMPCLearner, WallScanLossCfg, WeightPolicy
+from marinelab.algorithms.diff_wmpc import (
+    DiffWMPCLearner, WallScanLossCfg, WeightPolicy, policy_features,
+)
 from marinelab.assets.pkrc import PKRCThrusterCfg, PKRCThrusterCfgFixedTAM
 from marinelab.tasks.pkrc_wallscan import mpc_reference as mref
 from marinelab.tasks.pkrc_wallscan import scan_state_machine as ssm
@@ -132,16 +148,20 @@ def main() -> None:
                       code_export_root=os.path.join(REPO_ROOT, "isaaclab", "logs",
                                                     "c_generated_code_wallscan_diff"))
 
-    # feature = the NE error entries + phase(sin, cos). Phase matters: the useful weight
-    # schedule is phase-dependent (a sway leg wants roll authority, a heave leg wants z),
-    # and without it the policy would have to emit one compromise for all four.
-    feat_dim = NE + 2
+    # feature = the NE error entries + phase(sin, cos) [+ V1 look-ahead reference deltas].
+    # Phase matters: the useful weight schedule is phase-dependent (a sway leg wants roll
+    # authority, a heave leg wants z), and without it the policy would have to emit one
+    # compromise for all four. The construction itself lives in policy_features() —
+    # shared with the deployment adapter so the two can never drift apart.
+    preview_nodes = tuple(int(k) for k in args_cli.preview_nodes.split(",") if k.strip())
+    feat_dim = NE + 2 + 2 * len(preview_nodes)
     werr_lb = np.full(NE, 0.1)
     if args_cli.w_radial_floor > 0.0:
         werr_lb[[0, 6, 7]] = args_cli.w_radial_floor  # radial, head_x, head_y
     policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
                           werr_init=np.asarray(DEFAULT_WERR, float),
-                          wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb)
+                          wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb,
+                          preview_nodes=preview_nodes)
     print(f"[diff-wmpc] loss nodes {mpc.sens_nodes} "
           f"(= {[round(k * args_cli.dt_mpc, 2) for k in mpc.sens_nodes]} s ahead)  "
           f"radial/heading floor {args_cli.w_radial_floor}")
@@ -171,6 +191,13 @@ def main() -> None:
         """Random (radius, bearing, depth, attitude, phase) so a step budget buys coverage."""
         env.reset()
         env.episode_length_buf[:] = 0
+        if args_cli.dr_fluid > 0.0:
+            # V5: same scale_parameters tensor path DORAEMON uses — scales are relative to
+            # the immutable base snapshot, so per-segment redraws never compound.
+            lo, hi = 1.0 - args_cli.dr_fluid, 1.0 + args_cli.dr_fluid
+            draw = lambda: torch.empty(1, device=dev).uniform_(lo, hi)  # noqa: E731
+            env._hydro.scale_parameters(ALL, added_mass=draw(),
+                                        linear_damping=draw(), quadratic_damping=draw())
         r = float(rng.uniform(3.5, 5.3))          # radial error in [-1.0, +0.8] m
         th = float(rng.uniform(0.0, 2 * math.pi))
         z = float(rng.uniform(cfg_env.scan.z_bottom + 0.2, cfg_env.scan.z_top - 0.2))
@@ -243,10 +270,9 @@ def main() -> None:
 
         with torch.no_grad():
             e_now = errors_at(x0_t[0], 0)
-            ph = state_m.phase.float()
-            feat = torch.cat([e_now.cpu(),
-                              torch.stack([torch.sin(2 * math.pi * ph[0] / 4),
-                                           torch.cos(2 * math.pi * ph[0] / 4)]).cpu()])
+            feat = policy_features(e_now.cpu(), float(state_m.phase[0]),
+                                   z_ref=ref["z_ref"][0].cpu(), s_ref=ref["s_ref"][0].cpu(),
+                                   preview_nodes=preview_nodes)
 
         w = learner.compute_weights(feat)
         P = mpc.param_matrix({k: v[0] for k, v in ref.items()},
