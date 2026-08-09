@@ -1,8 +1,8 @@
 # SSI-MPC 튜닝 여정 기록 (논문 실험 섹션용)
 
-> `docs/bo_tuning_history.md`와 동일한 목적·형식: SSI-MPC(④, UM-iRaL/SSI-MPC 포팅)에
+> `docs/experiments/tuning_history/bo_tuning_history.md`와 동일한 목적·형식: SSI-MPC(④, UM-iRaL/SSI-MPC 포팅)에
 > 투입된 튜닝 노력 전체를 기록해 "베이스라인을 덜 튜닝했다"는 리뷰 공격을 봉쇄한다.
-> 실행 규칙은 `docs/experiment_work_directives.md`, 파이프라인은 §6 공용 `tune.py`.
+> 실행 규칙은 `docs/experiments/tuning_history/experiment_work_directives.md`, 파이프라인은 §6 공용 `tune.py`.
 
 ## Attempt 1 — 단일 시드 + 오염된 가중치 승계 (무효 판정, 2026-08-08)
 

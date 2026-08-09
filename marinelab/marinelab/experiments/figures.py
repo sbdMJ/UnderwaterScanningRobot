@@ -1,7 +1,7 @@
 # Copyright (c) 2026. SPDX-License-Identifier: BSD-3-Clause
 """General comparison figures F1–F6 (plan §10), styled after the SSI-MPC paper.
 
-Style contract (docs/SSI-MPC.pdf, T-RO / MATLAB conventions):
+Style contract (docs/references/SSI-MPC.pdf, T-RO / MATLAB conventions):
 - serif (Times) text with STIX math, boxed axes with inward ticks on all four sides,
   light gray grid, framed white legend;
 - one fixed color+marker per method across every figure (MATLAB default color order:

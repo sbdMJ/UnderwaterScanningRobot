@@ -126,8 +126,8 @@ diff-WMPC가 이 위에 얹는 증분(E1/E2/E3 diff + E4a)이며 타 머신 확�
 ## 5. 출처
 
 - Diff-WMPC: Jahncke et al., RA-L 2026 (부모 논문; MOBO-MPC 460k 샘플/1,071 s,
-  Monza→Laguna Seca 전이) — `docs/experiments_plan.md` 기록 기준
+  Monza→Laguna Seca 전이) — `docs/experiments/experiments_plan.md` 기록 기준
 - SSI-MPC: Zhou & Tzoumas, arXiv:2407.04143 (T-RO 제출; nominal/GP/NS/L1-MPC 대비
   ground-effect·바람 우위, §V-C 민감도, 실시간성) — arxiv.org/html/2407.04143v3 확인
 - 우리 데이터: `experimental_results/` 커밋 `dabe7ad`, 여정 문서
-  `docs/{bo,ssi}_tuning_history.md`, 지침 `docs/experiment_work_directives.md`
+  `docs/experiments/tuning_history/{bo,ssi}_tuning_history.md`, 지침 `docs/experiments/tuning_history/experiment_work_directives.md`

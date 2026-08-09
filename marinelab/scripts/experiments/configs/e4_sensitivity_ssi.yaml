@@ -1,4 +1,4 @@
-# [부록/여력 시 전용 — 기본 실행 플랜에서 제외됨 (docs/competitor_framework_plan.md §10)]
+# [부록/여력 시 전용 — 기본 실행 플랜에서 제외됨 (docs/experiments/competitor_framework_plan.md §10)]
 # E4 sensitivity analysis, mirroring SSI-MPC paper §V-C (arXiv:2407.04143):
 # grid over the number of random features (their M) and the learning rate (their eta),
 # one variable per condition family with the other fixed — exactly their Fig. 4 design.

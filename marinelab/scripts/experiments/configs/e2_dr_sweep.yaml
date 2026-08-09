@@ -1,4 +1,4 @@
-# E2(a): zero-shot robustness vs perturbation strength (docs/experiments_plan.md).
+# E2(a): zero-shot robustness vs perturbation strength (docs/experiments/experiments_plan.md).
 # Fluid-coefficient DR half-range sweeps ±25/±50/±75% on the stress-Eval task; attitude
 # (±45°) and sensor-mount (±8 cm) stress stay at Eval values. All methods deploy their
 # NOMINAL tuning unchanged (zero-shot); fine-tuning (E2b) is a separate run for the

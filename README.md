@@ -12,7 +12,7 @@ PKRC UUV(22.8 kg, T200×6)가 원통 수조(R=6 m, H=10 m) 벽면을 Ping1D 단�
 | `checkpoints/` | 최종 정책 `rb_train_model_7998.pt` + 학습 설정(agent/env yaml) |
 | `results/` | (legacy) 초기 Diff-WMPC 캠페인의 평가 산출물 — 신규 실험은 아래 사용 |
 | `experimental_results/` | competitor 비교 실험 산출물 (실험별 `raw/metrics/plots/tables/figures` 구조) |
-| `docs/` | 실험 설계(`experiments_plan.md`) + 프레임워크 구현 계획(`competitor_framework_plan.md`) |
+| `docs/` | 문서 인덱스·진행 현황(`README.md`), 실험 설계·검증(`experiments/`), 튜닝 여정·지침(`experiments/tuning_history/`), 참고 논문(`references/`) |
 
 **Competitor 비교 실험(E1–E4)의 실행 방법은 [marinelab/scripts/experiments/README.md](marinelab/scripts/experiments/README.md) 참조** —
 방법(nominal/bo/ppo/ssi/diff) × 조건 × seed 실행부터 LaTeX 표·논문 그림(F1–F10) 자동 생성까지.

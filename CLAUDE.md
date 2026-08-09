@@ -61,10 +61,10 @@ separate config whose `exp:` writes to its own results dir (e.g. `e2_interim/`) 
 experiment artifacts are never polluted. If the candidate already shows the failure mode
 (e.g. per-seed blowups), stop and fix the protocol instead of spending the remaining
 budget. Rationale: attempts 1-2 of BO tuning burned their full budget on a single-seed
-objective and were only caught afterwards by E1/E2 (see `docs/bo_tuning_history.md`).
+objective and were only caught afterwards by E1/E2 (see `docs/experiments/tuning_history/bo_tuning_history.md`).
 
 **Judge spot checks and result analyses against the parent paper's MOBO-WMPC pattern**
-(Diff-WMPC, RA-L 2026, Jahncke et al. — see `docs/bo_tuning_history.md` §0): a tuned
+(Diff-WMPC, RA-L 2026, Jahncke et al. — see `docs/experiments/tuning_history/bo_tuning_history.md` §0): a tuned
 static baseline must (1) match or beat Fixed-W nominal in-distribution, (2) degrade
 gracefully (not collapse) under perturbation, (3) lose only to the adaptive methods.
 Fixed-W nominal is the boundary between "zero-shot structural limit" and "tuning
@@ -327,7 +327,7 @@ obs 31 → action 6, 48 steps/env, adaptive LR (desired_kl 0.01), γ=0.995.
 
 - `marinelab/scripts/experiments/README.md` — competitor-comparison experiments (E1–E4):
   runner/tuning/aggregation/figure pipeline, results layout (`experimental_results/`)
-- `docs/competitor_framework_plan.md` — the experiment framework's design decisions
+- `docs/experiments/competitor_framework_plan.md` — the experiment framework's design decisions
   (controller layer, tuning protocol, figure plan F1–F10, SSI-MPC GPL isolation)
 - `docker/README.md` — this host's runtime, GUI, reproduction commands
 - `marinelab/docs/wallscan-training-code-guide.md` — code walkthrough in execution order (Korean)

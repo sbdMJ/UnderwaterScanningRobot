@@ -2,7 +2,7 @@
 # Cost weights are INHERITED from the BO result (§6: only the adaptation axis is tuned);
 # run tune_bo_nmpc first. n_rf fixed at the upstream default (100).
 #
-# Attempt 2 (2026-08-08): re-based + multi-seed. Attempt 1 (docs/ssi_tuning_history.md)
+# Attempt 2 (2026-08-08): re-based + multi-seed. Attempt 1 (docs/experiments/tuning_history/ssi_tuning_history.md)
 # was invalidated on two counts: it inherited the OVERFIT BO attempt-2 weights (E1 showed
 # SSI == BO-static per seed, i.e. performance was dominated by the inherited weights),
 # and it scored every trial on the single env seed 0. inherit_weights now resolves to the

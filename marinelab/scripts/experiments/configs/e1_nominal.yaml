@@ -1,4 +1,4 @@
-# E1: nominal-condition main comparison (docs/experiments_plan.md, Table 1).
+# E1: nominal-condition main comparison (docs/experiments/experiments_plan.md, Table 1).
 # Protocol: unified full-length first episode (runner zeroes episode_length_buf),
 # 9000 steps = one 180 s episode window per seed, score_episode 0, GT state (Phase 2a).
 exp: e1

@@ -1,7 +1,7 @@
 # Competitor 실험 실행 가이드
 
-`docs/experiments_plan.md`의 E1–E4를 실행하는 프레임워크. 설계 근거는
-`docs/competitor_framework_plan.md`, 방법(controller) 구현은 `marinelab/marinelab/control/`
+`docs/experiments/experiments_plan.md`의 E1–E4를 실행하는 프레임워크. 설계 근거는
+`docs/experiments/competitor_framework_plan.md`, 방법(controller) 구현은 `marinelab/marinelab/control/`
 (SSI-MPC는 `marinelab/marinelab/third_party/ssi_mpc_gpl/` — **GPL-3.0**, 배포 시 주의).
 
 ## 사전 준비 (Linux sim 호스트, 컨테이너)

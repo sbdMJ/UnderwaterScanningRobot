@@ -1,4 +1,4 @@
-# E3: ocean-current disturbance adaptation (docs/experiments_plan.md, SHOULD).
+# E3: ocean-current disturbance adaptation (docs/experiments/experiments_plan.md, SHOULD).
 # Nominal physics (Stage3) + injected current profiles: abrupt reversal (SSI-MPC's
 # ground-effect analogue) and one sinusoidal condition. Methods per plan: proposed,
 # SSI-MPC, Fixed-W (model adaptation is SSI's home ground — report honestly).

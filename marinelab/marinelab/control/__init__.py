@@ -3,7 +3,7 @@
 
 No isaaclab/pxr imports anywhere in this package — same rule as the pkrc_wallscan pure
 modules, and enforced the same way: submodules are resolved lazily so importing the package
-costs nothing and pulls no simulator. See ``docs/competitor_framework_plan.md`` §2-3.
+costs nothing and pulls no simulator. See ``docs/experiments/competitor_framework_plan.md`` §2-3.
 """
 from __future__ import annotations
 

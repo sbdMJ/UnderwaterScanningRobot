@@ -2,7 +2,7 @@
 
 > 대상: 다른 머신에서 최적화 중인 Diff-WMPC 모델이 확정된 뒤, 그것을 이 저장소에
 > 이식하고 남은 실험(E1/E2/E3 diff, E2b, E4a, F5)을 완료하는 세션.
-> 전제 지식: `CLAUDE.md`(모니터링/스팟체크 규칙), `docs/experiment_work_directives.md`
+> 전제 지식: `CLAUDE.md`(모니터링/스팟체크 규칙), `docs/experiments/tuning_history/experiment_work_directives.md`
 > (red-flag 규칙), `marinelab/scripts/experiments/README.md`(러너 사용법).
 
 ## 아키텍처 요약 — 무엇을 고치고 무엇을 건드리지 않는가
@@ -173,7 +173,7 @@ E3='--config ../marinelab/scripts/experiments/configs/e3_current.yaml'
 - [ ] figure 전체 재생성: F1(f1), F2, **F3 — `--logy` 필수** (PPO 스케일), F4, F5,
       F6(`--tuning experimental_results/tuning`), F7, **F8은 컨테이너에서** (호스트
       matplotlib Axes3D 불가), F9, F10
-- [ ] `docs/validation_report.md`에 diff 행/패턴 추가 (C1: diff > bo/ssi 성립 여부),
+- [ ] `docs/experiments/validation_report.md`에 diff 행/패턴 추가 (C1: diff > bo/ssi 성립 여부),
       §3 매트릭스 갱신
 - [ ] `docs/README.md` 체크리스트 갱신, 이 문서의 체크박스 갱신
 

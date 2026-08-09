@@ -2,7 +2,7 @@
 
 > 목적: "베이스라인을 덜 튜닝해놓고 이겼다"는 리뷰 공격에 대한 방어 자료.
 > BO-static(②)에 투입된 튜닝 노력 전체를 원논문(부모 논문) 기준과 함께 기록한다.
-> 프레임워크 설계 근거는 `docs/competitor_framework_plan.md` §6, 실행 파이프라인은
+> 프레임워크 설계 근거는 `docs/experiments/competitor_framework_plan.md` §6, 실행 파이프라인은
 > `marinelab/scripts/experiments/tune.py`.
 
 ## 0. 기준선: 원논문의 튜닝 노력과 기대 패턴

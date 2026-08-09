@@ -9,11 +9,11 @@
 | 순서 | 문서 | 내용 |
 |---|---|---|
 | ① | `docs/README.md` (이 문서) | 전체 현황·체크리스트 |
-| ② | `docs/experiments_plan.md` | ICRA 실험 설계 최종안 (E1–E5, 주장↔실험 매핑) |
-| ③ | `docs/competitor_framework_plan.md` | 프레임워크 구현 설계 (§6 튜닝 프로토콜, §7 env 확장) |
-| ④ | `docs/experiment_work_directives.md` | **실행 지침** — 분기 규칙, red-flag 규칙, 오염 사례 |
-| ⑤ | `docs/bo_tuning_history.md` / `docs/ssi_tuning_history.md` | 튜닝 여정 (논문 실험 섹션 소스) |
-| ⑥ | `docs/validation_report.md` | 결과 타당성 검증 (문헌 패턴 P1–P6 대조) |
+| ② | `docs/experiments/experiments_plan.md` | ICRA 실험 설계 최종안 (E1–E5, 주장↔실험 매핑) |
+| ③ | `docs/experiments/competitor_framework_plan.md` | 프레임워크 구현 설계 (§6 튜닝 프로토콜, §7 env 확장) |
+| ④ | `docs/experiments/tuning_history/experiment_work_directives.md` | **실행 지침** — 분기 규칙, red-flag 규칙, 오염 사례 |
+| ⑤ | `docs/experiments/tuning_history/bo_tuning_history.md` / `docs/experiments/tuning_history/ssi_tuning_history.md` | 튜닝 여정 (논문 실험 섹션 소스) |
+| ⑥ | `docs/experiments/validation_report.md` | 결과 타당성 검증 (문헌 패턴 P1–P6 대조) |
 | ⑦ | `docs/diff_wmpc_port_todo.md` | **다음 작업** — diff 이식→실험 완료 단계별 TODO |
 | 참조 | `marinelab/scripts/experiments/README.md`, `docker/README.md`, `CLAUDE.md` | 러너 사용법 / 호스트 런타임 / 세션 규칙 |
 

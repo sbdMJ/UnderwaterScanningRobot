@@ -1,6 +1,6 @@
 # 실험 진행 작업 지침 (2026-08-08 확정)
 
-> `docs/experiments_plan.md`(설계)·`docs/bo_tuning_history.md`(BO 여정)의 하위 실행 지침.
+> `docs/experiments/experiments_plan.md`(설계)·`docs/experiments/tuning_history/bo_tuning_history.md`(BO 여정)의 하위 실행 지침.
 > 실험을 수행하는 세션은 이 문서의 분기 규칙과 red-flag 규칙을 따른다.
 
 ## 1. 현재 파이프라인 분기 (사전 등록)
@@ -56,7 +56,7 @@ SSI의 시드별 점수가 BO-static과 사실상 동일 = 성능이 **승계된
   확정되어 있다 (무의미한 연산 반복 금지 규칙).
 - SSI 재평가는 반드시 건강한 가중치(게이트 통과 시 attempt-3, 실패 시 DEFAULT_WERR)
   로 재기반 + `tune_ssi_mpc.yaml` 재튜닝(다중 시드 프로토콜, §6 동일 예산) 후 진행.
-- SSI 튜닝의 모든 attempt는 `docs/ssi_tuning_history.md`에 기록한다
+- SSI 튜닝의 모든 attempt는 `docs/experiments/tuning_history/ssi_tuning_history.md`에 기록한다
   (BO의 `bo_tuning_history.md`와 동일 형식 — attempt별 프로토콜·예산·판정·무효 사유).
 - E1 ssi 결과 5셀도 같은 이유로 무효 — 재기반 후 재실행 대상.
 
