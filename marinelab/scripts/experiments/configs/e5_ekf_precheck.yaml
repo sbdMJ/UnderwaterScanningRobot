@@ -1,0 +1,28 @@
+# E5 precheck: EKF-in-loop state source (sim-to-real gate, docs/README.md §3-6).
+# Identical protocol to e1_nominal.yaml (same task/steps/seeds) with state: ekf,
+# so each cell is directly comparable to its GT twin in experimental_results/e1.
+# nominal is included as an optional reference to separate "EKF alone" from
+# "EKF x online-learner interaction" if the ssi cells degrade.
+exp: e5_ekf
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+
+conditions:
+  nominal: {}
+
+methods:
+  nominal:
+    tam: fixed
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
+    # adopted ssi_mpc attempt-2 (re-based, multi-seed) trial 87 — same as e1_nominal.yaml:
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]
