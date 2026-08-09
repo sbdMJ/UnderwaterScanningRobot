@@ -217,29 +217,35 @@ def fig_timeseries(cases: list[tuple[str, str, list[str], str]], out: str, *,
                    t_event: float | None = None, smooth_s: float = 1.0) -> list[str]:
     """cases: [(method, label, [npz_path, ...], metrics_json_path)] — every npz (seed)
     contributes all its envs; curves are the across-run mean with a ±SD band."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(4.8, 3.8), sharex=True)
+    # Three panels (2026-08-09 audit): wall distance and tilt barely register the current
+    # disturbance — a sustained tangential push mostly degrades the ARC-LENGTH tracking,
+    # which is where E3's objective differences (ssi/diff ~2x under nominal) actually live.
+    fig, (ax1, ax_s, ax2) = plt.subplots(3, 1, figsize=(4.8, 5.2), sharex=True)
     for method, label, npz_paths, metrics_path in cases:
         with open(metrics_path) as fh:
             meta = json.load(fh)
         dt, d_ref = float(meta["step_dt"]), float(meta["d_ref_m"])
         window = max(1, int(round(smooth_s / dt)))
-        wall_runs, tilt_runs = [], []
+        wall_runs, s_runs, tilt_runs = [], [], []
         for p in npz_paths:
             traj = np.load(p)
             wall_runs.append(np.abs(_traj_2d(traj["wall_dist"]) - d_ref))
+            s_runs.append(np.abs(_traj_2d(traj["s_gt"]) - _traj_2d(traj["s_ref"])))
             tilt_runs.append(_traj_2d(traj["tilt_deg"]))
         n = min(w.shape[0] for w in wall_runs)
         wall = np.concatenate([w[:n] for w in wall_runs], axis=1)
+        s_err = np.concatenate([w[:n] for w in s_runs], axis=1)
         tilt = np.concatenate([w[:n] for w in tilt_runs], axis=1)
         t = np.arange(n) * dt
-        for ax, data in ((ax1, wall), (ax2, tilt)):
+        for ax, data in ((ax1, wall), (ax_s, s_err), (ax2, tilt)):
             mean = _smooth(data.mean(axis=1), window)
             sd = _smooth(data.std(axis=1), window)
             ax.plot(t, mean, color=_color(method), label=label, zorder=3)
             if data.shape[1] > 1:
                 ax.fill_between(t, mean - sd, mean + sd, color=_color(method),
                                 alpha=0.18, linewidth=0, zorder=2)
-    for ax, ylab in ((ax1, r"Wall-distance error [m]"), (ax2, r"Tilt [deg]")):
+    for ax, ylab in ((ax1, r"Wall-distance error [m]"), (ax_s, r"Arc-length error [m]"),
+                     (ax2, r"Tilt [deg]")):
         if t_event is not None:
             ax.axvline(t_event, color="black", ls=":", lw=1.0, zorder=1)
         ax.set_ylabel(ylab)
@@ -442,11 +448,13 @@ def fig_sensitivity(rows: list[dict], out: str, *, metric: str = "score.objectiv
         vals = [v for v in vals if v is not None]
         return Counter(vals).most_common(1)[0][0] if vals else None
 
-    nrf_mode = _mode([r.get("options.ssi_n_rf") for r in rows])
-    lr_rows = [r for r in rows if r.get("options.ssi_n_rf") == nrf_mode]
-    m_family = [r for r in rows if r.get("options.ssi_n_rf") not in (None, nrf_mode)]
-    lr_fixed = _mode([r.get("options.ssi_lr") for r in (m_family or rows)])
-    m_rows = [r for r in rows if r.get("options.ssi_lr") == lr_fixed]
+    # The lr family leaves ssi_n_rf UNSET (upstream default), the M family sets it —
+    # that absence is the family marker. The old mode-of-n_rf heuristic picked an
+    # M-family value as "the fixed n_rf" and drew the lr panel from a single M cell
+    # (one point at the tuned lr) instead of the six-decade sweep.
+    m_rows = [r for r in rows if r.get("options.ssi_n_rf") is not None]
+    lr_rows = [r for r in rows if r.get("options.ssi_n_rf") is None] or rows
+    lr_fixed = _mode([r.get("options.ssi_lr") for r in (m_rows or rows)])  # noqa: F841 (title use)
 
     def _panel(ax, panel_rows, xkey, xlabel, log_x):
         groups: dict[float, list[float]] = {}
