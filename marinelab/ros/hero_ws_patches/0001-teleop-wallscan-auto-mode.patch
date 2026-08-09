@@ -1,0 +1,86 @@
+--- a/src/pkrc_control/pkrc_control/keyboard_control_teleop.py
++++ b/src/pkrc_control/pkrc_control/keyboard_control_teleop.py
+@@ -621,6 +621,18 @@
+         self.depth_debug_pub = self.create_publisher(
+             Float64MultiArray, '/teleop/depth_debug', 10)
+ 
++        # ── Wallscan auto mode (pkrc_wallscan_bridge 연동) ──────────────
++        # 'g' 키로 토글 진입, 그 외 아무 키나 누르면 즉시 수동 복귀. 자동 명령
++        # (/wallscan/current_cmd, A 단위·VESC 순서 T1..T6)이 auto_stale_sec 이상
++        # 끊겨도 수동 복귀 + 정지. CAN 소유는 이 노드 하나이며, auto 전류도
++        # 극성/게인/클램프/데드존/램프 경로를 수동과 동일하게 통과한다.
++        self.auto_mode = False
++        self.auto_currents = [0.0] * 6
++        self.auto_last_rx = 0.0
++        self.auto_stale_sec = 0.5
++        self.create_subscription(Float64MultiArray, '/wallscan/current_cmd',
++                                 self._wallscan_current_cb, 10)
++
+         # ── Terminal ───────────────────────────────────────────────────
+         self.running = True
+         try:
+@@ -794,6 +806,12 @@
+         pub.publish(m)
+ 
+     # ─── Control Loop (50 Hz) ──────────────────────────────────────
++    def _wallscan_current_cb(self, msg):
++        """pkrc_wallscan_bridge thrust_mapper 의 전류 명령 (A, VESC 순서 T1..T6)."""
++        if len(msg.data) == 6:
++            self.auto_currents = list(msg.data)
++            self.auto_last_rx = self.get_clock().now().nanoseconds / 1e9
++
+     def control_loop(self):
+         if not self.running:
+             self.stop_all()
+@@ -809,6 +827,19 @@
+                              else key.upper())
+             k = key.lower() if len(key) == 1 else key
+ 
++            # ── Wallscan auto 토글/이탈: 'g' 외 아무 키나 → 즉시 수동 ──
++            if k == 'g':
++                self.auto_mode = not self.auto_mode
++                if self.auto_mode:
++                    self.get_logger().info(
++                        'WALLSCAN AUTO ON — 아무 키나 누르면 수동 복귀')
++                else:
++                    self.get_logger().info('WALLSCAN AUTO OFF (g)')
++            elif self.auto_mode:
++                self.auto_mode = False
++                self.get_logger().info(
++                    f'WALLSCAN AUTO OFF (key {k!r}) — manual control')
++
+             if key == 'UP':
+                 self.force[0] = +self.surge_cmd
+                 self.axis_last_time[0] = now
+@@ -1106,6 +1137,31 @@
+             'heave_up':    thrust[4],
+             'heave_down':  thrust[5],
+         }
++        # ── Wallscan auto override ──────────────────────────────────────
++        # /wallscan/current_cmd (A, VESC 순서)를 target 으로 대체. 수동 경로와
++        # 동일하게 극성·게인·max_current 클램프·데드존을 적용하고, 램프/CAN
++        # 전송은 아래 공통 경로를 그대로 탄다. 명령이 끊기면 즉시 수동 복귀.
++        if self.auto_mode:
++            if now - self.auto_last_rx > self.auto_stale_sec:
++                self.auto_mode = False
++                self.get_logger().warn(
++                    'WALLSCAN AUTO: command stale — manual control + stop')
++            else:
++                auto = [clamp(self.auto_currents[i]
++                              * self.thruster_gain[i]
++                              * self.thruster_polarity[i],
++                              -self.max_current[i], self.max_current[i])
++                        for i in range(6)]
++                for i in range(4):  # VESC 데드존 보상 (mix_thrusters 와 동일 규칙)
++                    if abs(auto[i]) < 0.10:
++                        auto[i] = 0.0
++                    elif abs(auto[i]) < self.min_current_horizontal:
++                        auto[i] = math.copysign(
++                            self.min_current_horizontal, auto[i])
++                target = dict(zip(
++                    ('surge_left', 'surge_right', 'sway_left',
++                     'sway_right', 'heave_up', 'heave_down'), auto))
++
+         for name in self.vesc_ids:
+             diff = target[name] - self.actual[name]
+             if abs(diff) > self.ramp_step:

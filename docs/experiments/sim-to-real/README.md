@@ -57,11 +57,18 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 
 ## 3. 남은 계획
 
-### Phase C-③ — 구동계 연결 (로봇/실험실 필요)
-- [ ] **u[-1,1] → VESC 전류 매핑**: `thruster_test.py`로 스러스터별 추력-전류 곡선 측정.
-      Phase C의 마지막 미지수. teleop 노드에 auto 모드 추가 (키보드 = 안전 오버라이드).
-- [ ] 시뮬 allocation matrix ↔ 실배치(surge×2/sway×2/heave×2, VESC 0x151–0x156) 대조
-      (`_probe_plant.py` 파라미터 포함)
+### Phase C-③ — 구동계 연결 (소프트웨어 완료 2026-08-09, 실측 대기)
+- [x] **Step 0 대응표**: [`thruster_mapping.md`](thruster_mapping.md) — sim TAM ↔ VESC ↔
+      teleop 대응 확정 (surge/sway는 yaw 부호 패턴으로 신뢰, **heave 쌍은 sim(좌/우
+      y=±0.16, 롤 권한)과 teleop TAM(Fz 반대 부호)이 불일치 — 벤치 검증 프로토콜 §3**)
+- [x] **Step 3 코드**: 순수 `ThrustCurrentMap`(+테스트 5) → `thrust_mapper` 노드
+      (`/wallscan/u`→`/wallscan/current_cmd`) → teleop auto 모드 패치
+      (`marinelab/ros/hero_ws_patches/0001`, 'g' 진입·아무 키 복귀·stale 자동 복귀,
+      기존 극성/클램프/데드존/램프 경로 유지)
+- [ ] **Step 1–2 캘리브레이션 (로봇)**: T200 데이터시트 1차값 → bollard pull 실측 →
+      `newton_per_amp` 파라미터 + `pkrc_plant_fixed_tam.json`의 `max_thrust` 정합.
+      캘리브레이션 전에는 teleop 수동 스케일(저대역 시험만).
+- [ ] heave 쌍 기하 벤치 검증 → 불일치 시 plant JSON의 TAM 교체 + e5_ekf 재검증
 
 ### Phase D — Jetson 실행 환경 + E4(c)
 - [ ] acados aarch64 빌드 절차 문서화 + 실행 (Jetson)

@@ -20,6 +20,7 @@ setup(
         "console_scripts": [
             "estimator_bridge = pkrc_wallscan_bridge.estimator_bridge:main",
             "wallscan_controller = pkrc_wallscan_bridge.wallscan_controller:main",
+            "thrust_mapper = pkrc_wallscan_bridge.thrust_mapper:main",
         ],
     },
 )
