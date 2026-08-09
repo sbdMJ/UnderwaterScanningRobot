@@ -65,3 +65,56 @@ def test_zhold_latches_ground_truth_not_sensor():
     z_ref, _, _, adv = step(st, z_sensor, torch.tensor([0.0]), cfg, z_latch=z_gt)
     assert adv.item() and st.phase.item() == 1
     assert torch.isclose(z_ref, z_gt, atol=1e-4).all(), "z_ref must latch GT depth, not biased sensor"
+
+
+# ---------------------------------------------------------------------------
+# snap_ramp_on_vertical (2026-08-08)
+#
+# A sway leg can clear up to reach_eps short of its target; without the snap the s ramp keeps
+# slewing toward that target through the vertical leg, so the reference commands 55 cm of
+# sideways motion during a leg that should be vertical. Off by default -- every published
+# number ran with the bleed present.
+# ---------------------------------------------------------------------------
+def _cfg(**over):
+    base = dict(z_top=8.5, z_bottom=1.0, sway_step=1.0, reach_eps=0.6, reach_hold=1,
+                ref_step=0.004, ref_step_s=0.002)
+    base.update(over)
+    return ScanCfg(**base)
+
+
+def test_snap_off_by_default_so_published_behaviour_is_unchanged():
+    assert ScanCfg(z_top=8.5, z_bottom=1.0, reach_eps=0.6,
+                       reach_hold=1).snap_ramp_on_vertical is False
+
+
+def test_snap_drops_the_arc_reference_onto_the_vehicle_when_a_vertical_leg_begins():
+    n = 1
+    for snap in (False, True):
+        cfg = _cfg(snap_ramp_on_vertical=snap)
+        st = ScanState(n, device="cpu")
+        st.phase[:] = 1
+        st.s_ref[:] = 1.0              # sway target
+        st.s_ramp[:] = 0.7
+        z = torch.full((n,), 8.5)      # z_hold satisfied, so the sway gate is on |s - s_ref|
+        s = torch.full((n,), 0.55)     # 0.45 m short -- inside reach_eps 0.6, so it clears
+        step(st, z, s, cfg, z_latch=z)
+        assert (st.phase == 2).all(), "sway must clear at the band edge"
+        if snap:
+            assert torch.allclose(st.s_ref, s) and torch.allclose(st.s_ramp, s), \
+                "the leftover must be abandoned, not carried into the vertical leg"
+        else:
+            assert torch.allclose(st.s_ref, torch.full((n,), 1.0)), "legacy keeps chasing it"
+
+
+def test_snap_leaves_the_sway_bump_itself_alone():
+    """Only VERTICAL entries snap; entering a sway leg must still command a full sway_step."""
+    n = 1
+    cfg = _cfg(snap_ramp_on_vertical=True)
+    st = ScanState(n, device="cpu")
+    st.phase[:] = 0
+    z = torch.full((n,), 1.0)          # at z_bottom -> descend clears
+    st.z_ramp[:] = 1.0                 # ...but only if the RAMP has arrived too (07-26 gate)
+    s = torch.full((n,), 2.0)
+    step(st, z, s, cfg, z_latch=z)
+    assert (st.phase == 1).all()
+    assert torch.allclose(st.s_ref, s + cfg.sway_step), "sway target must still be a real step"

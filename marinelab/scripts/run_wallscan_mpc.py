@@ -91,6 +91,14 @@ parser.add_argument("--sensors", choices=["placeholder", "datasheet"], default="
                     help="Sensor model for --state ekf. 'datasheet' uses the 3DM-GV7 and Ping1D "
                          "published figures instead of the conservative guesses in SensorCfg; the "
                          "gyro turn-on bias alone is 213x smaller.")
+parser.add_argument("--full_3axis", action="store_true", default=False,
+                    help="Model the DVL and gyro as the 3-AXIS instruments they are. By default\n"
+                         "estimator_loop passes body v_z and the roll/pitch rates through from\n"
+                         "GROUND TRUTH, which flatters the wallscan's primary axis and, because\n"
+                         "wrench_observer computes its force channel from v_z, feeds any\n"
+                         "plant-conditioned policy a partly ground-truth signal. Turning this on is\n"
+                         "the observer-degradation test AND the sim2real fix: it is what the real\n"
+                         "vehicle actually has. Off by default so published numbers keep meaning.")
 parser.add_argument("--gyro_bias", type=float, default=None,
                     help="Override the gyro bias [rad/s]. Default: taken from the chosen --sensors "
                          "model (0.02 placeholder, 9.4e-5 datasheet).")
@@ -100,13 +108,82 @@ parser.add_argument("--policy_ckpt", type=str, default=None,
                          "metrics path compares learned vs hand-tuned weights directly.")
 parser.add_argument("--w_roll", type=float, default=None,
                     help="Override the roll/pitch cost weights. Under the FIXED TAM a high value is\n                         what makes the solver spend heave differential on cancelling the sway\n                         leg's parasitic moment; under the shipped TAM it cannot help (pitch has\n                         no other actuator), so this is the decisive A/B.")
+parser.add_argument("--werr", type=str, action="append", default=None, metavar="NAME=VALUE",
+                    help="Override ONE entry of the error cost weight vector, by its\n"
+                         "mpc_reference.ERROR_NAMES name (e.g. --werr pitch=0.1 --werr w_y=0.1).\n"
+                         "Repeatable, and applied AFTER --w_roll so it can split that flag's pair.\n"
+                         "Exists because --w_roll sets roll and pitch TOGETHER, and under\n"
+                         "PKRCThrusterCfgFixedTAM the pitch row of the allocation matrix is all\n"
+                         "zeros: weight on pitch/w_y can only perturb the QP and spend heave\n"
+                         "authority on an axis with no actuator behind it.")
+parser.add_argument("--wu", type=float, default=None,
+                    help="Override the control-effort weight (default DEFAULT_WU = 0.01, applied to\n"
+                         "all 6 inputs). Only the werr:wu RATIO matters, so this is the knob for how\n"
+                         "aggressive the solver is allowed to be -- the Diff-WMPC policy learned\n"
+                         "wu ~ 0.005 alongside werr ~ 100x DEFAULT_WERR, i.e. an effort penalty ~200x\n"
+                         "weaker than the hand-tuned default, and that ratio is not reachable with\n"
+                         "--werr alone because werr is capped at 5000.")
+parser.add_argument("--log_weights", action="store_true", default=False,
+                    help="Store the PER-STEP, PER-ENV cost weights the policy emits and the plant\n"
+                         "features it saw, into the trajectory npz as werr_t/wu_t/plant_t. The\n"
+                         "aggregate werr_emitted_mean cannot show a transient, and a run that\n"
+                         "diverges in one env of eight is exactly a transient -- diagnosing it from\n"
+                         "the mean is guesswork. Adds ~7 MB per 9000-step 8-env run.")
+parser.add_argument("--snap_ramp", action="store_true", default=False,
+                    help="Snap the arc reference onto the vehicle when a VERTICAL phase begins, so\n"
+                         "a sway leg that cleared short does not leave the ramp commanding sideways\n"
+                         "motion through the descent. See ScanCfg.snap_ramp_on_vertical: the bleed is\n"
+                         "55-56 cm at every trim level and is the whole coverage floor that survives\n"
+                         "a perfectly trimmed vehicle. The alternative -- tightening --reach_eps --\n"
+                         "removes it by making the vehicle chase the remainder, and costs the scan:\n"
+                         "measured 0.6 -> 0.1 takes cycles 1.83 -> 0.08.")
+parser.add_argument("--reach_eps", type=float, default=None,
+                    help="Override ScanCfg.reach_eps, the band a phase must be inside before the\n"
+                         "state machine advances. The 0.6 default exists for RL BOOTSTRAP -- see\n"
+                         "wallscan_env_cfg: at 0.3 a fresh policy never reaches a waypoint, sigma\n"
+                         "collapses, and training deadlocks. None of that applies to the NMPC: no\n"
+                         "exploration, no sigma, no bootstrap.\n"
+                         "What 0.6 costs here was already diagnosed on 2026-07-26 and is still\n"
+                         "present, measured 2026-08-08: a sway leg may clear up to 0.6 m short, the\n"
+                         "s ramp keeps running into the NEXT phase, and the reference itself then\n"
+                         "moves 55-56 cm sideways during a vertical leg -- identical across trim\n"
+                         "levels, and the whole coverage floor that survives a perfectly trimmed\n"
+                         "vehicle. The scan is drawing diagonals because it was asked to.")
+parser.add_argument("--dr_trim_cm", type=float, default=None, metavar="CM",
+                    help="Narrow the CoB/CoG offset DR to +-CM centimetres (all three axes),\n"
+                         "leaving every other channel alone. The Eval default is +-5 cm, which\n"
+                         "the closed form theta_eq = asin(trim / z_cb) with the measured\n"
+                         "z_cb = 0.150 m turns into a 19.5 deg standing pitch -- on an axis with no\n"
+                         "actuator, so no controller can answer it, and the tangential drift that\n"
+                         "wrecks scan coverage follows it at ~16 cm per degree (r = 0.92 over 10\n"
+                         "configurations). Trim is a build property: it is measured by floating the\n"
+                         "vehicle and reading its rest angle, and corrected with ballast. Narrowing\n"
+                         "this to what assembly can actually hold removes conditions the vehicle is\n"
+                         "physically incapable of, instead of training against them.")
+parser.add_argument("--pin_spec", type=str, default=None, metavar="VOL,COB_X,COG_X",
+                    help="Pin the DR draw to an ARBITRARY vehicle, e.g. '0.85,-0.05,0.05'. Same\n"
+                         "semantics as --pin_dr (every other channel nominal) but anywhere in the\n"
+                         "box, so the region where the ceiling opens can be mapped. Screening is\n"
+                         "cheap because the shared vector's own error UPPER-BOUNDS the ceiling at\n"
+                         "that vehicle: an optimal vector cannot do better than zero error, so a\n"
+                         "cell where the shared vector is already good needs no per-vehicle training.")
+parser.add_argument("--pin_dr", choices=["A", "B", "C"], default=None,
+                    help="Collapse every DR range to a SINGLE vehicle, so 'the optimal weight\n"
+                         "vector for this vehicle' is well defined. A = buoyancy -34 N with the\n"
+                         "CoB trimmed one way, B = nominal, C = +34 N trimmed the other. Only\n"
+                         "volume_scale and the CoB/CoG offsets differ between them; every other\n"
+                         "channel is pinned at nominal, so the three isolate exactly the axis a\n"
+                         "plant-conditioned policy would have to exploit. Spawn attitude stays\n"
+                         "randomized -- pinning it would remove the transient the controller has\n"
+                         "to survive. Used to measure the CEILING on conditioning: the gap between\n"
+                         "a per-vehicle optimum and one shared vector is the most any policy can win.")
 parser.add_argument("--dobs", action="store_true", default=False,
                     help="Enable the residual-wrench observer (online buoyancy/trim estimation) and\n"
                          "feed its estimate to the MPC as a model parameter. OFF by default so every\n"
                          "already-published number keeps its meaning; the measurements this exists to\n"
                          "attack are the stress-DR standing offsets (tilt 13.83 deg, wall 5.52 cm,\n"
                          "saturated 29%, QP failures 0.00%) -- i.e. a model error, not a solver one.")
-parser.add_argument("--dobs_channels", choices=["all", "moment", "z_moment"], default="all",
+parser.add_argument("--dobs_channels", choices=["all", "moment", "z_moment", "none"], default="all",
                     help="Which observer channels are fed to the MPC: 'moment' = body moments only,\n"
                          "'z_moment' adds the vertical (buoyancy) force, 'all' adds the lateral forces.\n"
                          "MEASURED indistinguishable at 3 seeds -- every effect comes from the moment\n"
@@ -166,6 +243,7 @@ from marinelab.assets.pkrc import (
     PKRCThrusterCfg,
     PKRCThrusterCfgFixedTAM,
 )
+from marinelab.algorithms.diff_wmpc import build_features
 from marinelab.tasks.pkrc_wallscan import eval_metrics as em
 from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref, scan_state_machine as ssm
 from marinelab.tasks.pkrc_wallscan.mpc_controller import DEFAULT_WERR, DEFAULT_WU, PlantParams, WallScanMPC
@@ -176,7 +254,42 @@ from marinelab.tasks.pkrc_wallscan.estimator_loop import WallFrameEstimator
 from marinelab.tasks.pkrc_wallscan.wrench_observer import WrenchObserver, WrenchObserverCfg
 from marinelab.tasks.pkrc_wallscan.wallscan_env_cfg import WallScanEvalCfg, WallScanStage3Cfg
 
+
+PIN_DR = {
+    "A": dict(volume_scale=(0.85, 0.85), cob_offset_x=(-0.05, -0.05), cog_offset_x=(0.05, 0.05)),
+    "B": dict(volume_scale=(1.00, 1.00), cob_offset_x=(0.0, 0.0), cog_offset_x=(0.0, 0.0)),
+    "C": dict(volume_scale=(1.15, 1.15), cob_offset_x=(0.05, 0.05), cog_offset_x=(-0.05, -0.05)),
+}
+
+
+def apply_pin_dr(cfg, name, spec=None):
+    """Freeze the DR draw to one deterministic vehicle (see --pin_dr / --pin_spec)."""
+    r = cfg.randomization
+    for f in ("added_mass_scale", "linear_damping_scale", "quadratic_damping_scale",
+              "thrust_coefficient_scale", "time_constant_scale", "inertia_scale"):
+        setattr(r, f, (1.0, 1.0))
+    for f in ("cob_offset_y", "cob_offset_z", "cog_offset_y", "cog_offset_z"):
+        setattr(r, f, (0.0, 0.0))
+    if spec:
+        vol, cob, cog = (float(x) for x in spec.split(","))
+        r.volume_scale = (vol, vol)
+        r.cob_offset_x = (cob, cob)
+        r.cog_offset_x = (cog, cog)
+    else:
+        for f, v in PIN_DR[name].items():
+            setattr(r, f, v)
+    print(f"[INFO] DR pinned to vehicle {name}: volume={r.volume_scale[0]} "
+          f"cob_x={r.cob_offset_x[0]} cog_x={r.cog_offset_x[0]}; all other channels nominal")
+    return cfg
+
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _wrap_pi(a: torch.Tensor) -> torch.Tensor:
+    """Euler angle -> (-pi, pi]. ``euler_xyz_from_quat`` returns [0, 2pi), where a small negative
+    roll reads as ~6.28 rad and any |.|-mean over it is meaningless."""
+    return torch.atan2(torch.sin(a), torch.cos(a))
 
 
 def main() -> None:
@@ -188,6 +301,21 @@ def main() -> None:
     if args_cli.seed is not None:
         cfg.seed = args_cli.seed  # DirectRLEnv seeds torch from this in __init__
     cfg.thrusters = PKRCThrusterCfgFixedTAM() if args_cli.tam == "fixed" else PKRCThrusterCfg()
+    if args_cli.snap_ramp:
+        cfg.scan.snap_ramp_on_vertical = True
+        print('[INFO] arc ramp snaps to the vehicle on vertical-phase entry')
+    if args_cli.reach_eps is not None:
+        cfg.scan.reach_eps = args_cli.reach_eps
+        print(f'[INFO] reach_eps = {cfg.scan.reach_eps} (default 0.6 is an RL-bootstrap value)')
+    if args_cli.dr_trim_cm is not None:
+        _t = args_cli.dr_trim_cm / 100.0
+        for _f in ('cob_offset_x', 'cob_offset_y', 'cob_offset_z',
+                   'cog_offset_x', 'cog_offset_y', 'cog_offset_z'):
+            setattr(cfg.randomization, _f, (-_t, _t))
+        print(f'[INFO] CoB/CoG trim DR narrowed to +-{args_cli.dr_trim_cm} cm '
+              f'(predicted max standing pitch {__import__("math").degrees(__import__("math").asin(min(_t / 0.150, 1.0))):.1f} deg)')
+    if args_cli.pin_dr or args_cli.pin_spec:
+        apply_pin_dr(cfg, args_cli.pin_dr or 'B', args_cli.pin_spec)
     cfg.hydrodynamics = (PKRCHydrodynamicsCfgZSlender() if args_cli.hydro == "z_slender"
                          else PKRCHydrodynamicsCfg())
     if args_cli.thruster_tau is not None:
@@ -263,20 +391,58 @@ def main() -> None:
     werr = np.asarray(DEFAULT_WERR, float)
     if args_cli.w_roll is not None:
         werr[8] = werr[9] = args_cli.w_roll
-    weights = np.concatenate([werr, np.full(mpc.nu, DEFAULT_WU)])
-    print(f"[INFO] w_roll/pitch = {werr[8]:.1f}")
+    for spec in args_cli.werr or ():
+        name, _, val = spec.partition("=")
+        if name not in mref.ERROR_NAMES or not _:
+            raise SystemExit(f"--werr expects NAME=VALUE with NAME in {mref.ERROR_NAMES}; got {spec!r}")
+        werr[mref.ERROR_NAMES.index(name)] = float(val)
+    wu_val = DEFAULT_WU if args_cli.wu is None else args_cli.wu
+    weights = np.concatenate([werr, np.full(mpc.nu, wu_val)])
+    print("[INFO] werr = " + ", ".join(f"{n}={v:g}" for n, v in zip(mref.ERROR_NAMES, werr))
+          + f"  wu={wu_val:g}")
 
     policy = None
+    feat_mode = "error_phase"
     if args_cli.policy_ckpt:
         from marinelab.algorithms.diff_wmpc import WeightPolicy
+        from marinelab.algorithms.diff_wmpc import feature_dim as dw_feature_dim
         from marinelab.tasks.pkrc_wallscan.mpc_reference import NE as _NE
 
-        policy = WeightPolicy(_NE + 2, _NE, mpc.nu, werr_init=werr,
-                              wu_init=np.full(mpc.nu, DEFAULT_WU))
         st = torch.load(args_cli.policy_ckpt, map_location="cpu")
-        policy.load_state_dict(st["policy"] if "policy" in st else st)
-        policy.eval()
-        print(f"[INFO] weights from Diff-WMPC policy {args_cli.policy_ckpt}")
+        # The layout travels WITH the checkpoint; checkpoints written before --feat existed
+        # carry no stamp and are legacy `error_phase` by construction.
+        feat_mode = st.get("feat_mode", "error_phase") if isinstance(st, dict) else "error_phase"
+        plant_feat = bool(st.get("plant_feat", False)) if isinstance(st, dict) else False
+        sym_sway = bool(st.get("sym_sway", False)) if isinstance(st, dict) else False
+        fixed_wu = st.get("fixed_wu") if isinstance(st, dict) else None
+        ck_horizon = st.get("horizon") if isinstance(st, dict) else None
+        if ck_horizon is not None and int(ck_horizon) != args_cli.horizon:
+            raise SystemExit(
+                f"checkpoint was trained with --horizon {ck_horizon} but this run uses "
+                f"{args_cli.horizon}; the preview stages would sample different look-ahead times")
+        # ONE POLICY INSTANCE PER ENV. WeightPolicy keeps an internal `_history` of past
+        # features, so a single instance driven round-robin over N envs interleaves eight
+        # vehicles' histories into one buffer -- the same bug class as sharing one acados
+        # solver. Invisible with the legacy near-constant weights, fatal with a preview feature.
+        sd = st["policy"] if "policy" in st else st
+        policies = []
+        for _ in range(N):
+            p = WeightPolicy(dw_feature_dim(feat_mode, _NE, plant=plant_feat), _NE, mpc.nu,
+                             werr_init=werr, wu_init=np.full(mpc.nu, DEFAULT_WU))
+            p.load_state_dict(sd)
+            p.eval()
+            policies.append(p)
+        policy = policies[0]
+        print(f"[INFO] weights from Diff-WMPC policy {args_cli.policy_ckpt} "
+              f"(feat={feat_mode}, plant={plant_feat}, sym_sway={sym_sway}, "
+              f"fixed_wu={fixed_wu}, {N} instances)")
+        if plant_feat and not args_cli.dobs:
+            raise SystemExit(
+                "this checkpoint was trained with --plant_feat, so its policy input includes the "
+                "wrench-observer channels; run with --dobs so they exist. Without it the plant "
+                "block would be all zeros and the policy would silently see a vehicle it is not on. "
+                "Use --dobs --dobs_channels none to match training, which gives the estimate to the "
+                "POLICY only and still feeds the solver a zero disturbance.")
 
     # Our own scan state machine: the env runs one too, but its phase timing is gated by the
     # spin search we are skipping, so the controller must own the reference it tracks.
@@ -326,6 +492,7 @@ def main() -> None:
     if args_cli.state == "ekf":
         seeds = np.random.SeedSequence(args_cli.seed).spawn(N)
         ests = [WallFrameEstimator(
+            full_3axis=args_cli.full_3axis,
             scfg=scfg, tank_radius=cfg.tank_radius, step_dt=dt,
             sonar_mount_nom=env._sonar_mount_nom[e:e + 1] if env._sonar_mount_nom.shape[0] > 1
                             else env._sonar_mount_nom,
@@ -364,6 +531,7 @@ def main() -> None:
         reset_estimator()
 
     log = em.TrajectoryLog()
+    rp_log: list[torch.Tensor] = []   # per-step (2, N) roll/pitch [rad]; merged into the npz below
     est_err = {"r": [], "phi": [], "s": []}
     # Accumulated across segments: reset_estimator() builds a FRESH filter, so reading
     # ekf.n_ukfm at the end would report only what happened after the last reset (the timeout
@@ -389,6 +557,12 @@ def main() -> None:
             "all": (True,) * 6,
             "z_moment": (False, False, True, True, True, True),
             "moment": (False, False, False, True, True, True),
+            # 'none' RUNS the observer but exports nothing to the solver. Needed by --plant_feat
+            # checkpoints: the trainer feeds the solver a zero disturbance and gives the estimate
+            # only to the POLICY, so exporting it here as well would be a train/test mismatch --
+            # and it would confound "weights conditioned on the plant" with "model corrected by
+            # the plant", which is a different experiment that was already measured (not a win).
+            "none": (False,) * 6,
         }[args_cli.dobs_channels]
         ocfg = WrenchObserverCfg(lam_force=args_cli.dobs_lam_force,
                                  lam_moment=args_cli.dobs_lam_moment, channel_mask=mask)
@@ -416,6 +590,27 @@ def main() -> None:
     n_solve = 0
     n_fail = 0
     sat_steps = 0
+    # Mean of the weights a policy actually EMITS in closed loop. Two uses: it is the closed-loop
+    # version of the paper's Fig. 5 (the offline probe only shows what the net does on synthetic
+    # inputs), and it is the only defensible vector to freeze for a static control -- freezing at
+    # one hand-picked operating point misrepresents a policy whose output swings 90% across phases.
+    w_sum = np.zeros(mpc.n_pglobal)
+    n_w = 0
+    # Per-env saturated-step EMA, the 5th plant channel. Per env for the same reason the solvers
+    # and estimators are: the envs are different vehicles running independent episodes.
+    sat_ema = np.zeros(N)
+    w_log: list[np.ndarray] = []      # per-step (N, n_pglobal), only with --log_weights
+    plant_log: list[np.ndarray] = []  # per-step (N, N_PLANT)
+
+    def _plant_row(e: int) -> np.ndarray:
+        """The PLANT feature block for env `e`, scaled EXACTLY as train_diff_wmpc_wallscan.py
+        scales it -- moments by 10 N*m, the buoyancy residual by 34 N (Eval's volume DR against a
+        40 N thruster), saturation already in [0, 1]. Reads the observer's RAW estimate, not
+        `exported()`: --dobs_channels masks what reaches the SOLVER, and applying it here too
+        would feed the policy zeros for channels it was trained to see."""
+        d = obs_list[e].d
+        return np.array([d[3] / 10.0, d[4] / 10.0, d[5] / 10.0, d[2] / 34.0, sat_ema[e]],
+                        dtype=np.float32)
 
     print(f"[INFO] {args_cli.steps} steps x {N} envs ({args_cli.steps * dt:.0f} s of sim)")
     for i in range(args_cli.steps):
@@ -484,16 +679,26 @@ def main() -> None:
 
         if policy is not None:
             with torch.no_grad():
-                e_now = mref.wallscan_errors(
+                e_all = mref.wallscan_errors(
                     torch.cat([pos_c, quat_c, v_c, w_c], dim=-1),
                     z_ref=ref["z_ref"][:, 0], s_ref=ref["s_ref"][:, 0],
                     v_tan_des=ref["v_tan_des"][:, 0], v_z_des=ref["v_z_des"][:, 0],
                     theta_anchor=theta, s_anchor=s_gt, cfg=mpc_cfg,
-                )[0]
-                phf = state.phase.float()[0]
-                feat = torch.cat([e_now.cpu(), torch.stack([
-                    torch.sin(2 * math.pi * phf / 4), torch.cos(2 * math.pi * phf / 4)]).cpu()])
-                weights = policy(feat).numpy()
+                )
+                weights_e = np.stack([
+                    policies[e](build_features(
+                        feat_mode, e_now=e_all[e], phase=state.phase[e], ref=ref,
+                        n_stages=args_cli.horizon, env=e, sym_sway=sym_sway,
+                        plant=_plant_row(e) if plant_feat else None)).numpy()
+                    for e in range(N)])
+                if fixed_wu is not None:
+                    weights_e[:, _NE:] = fixed_wu
+                w_sum += weights_e.mean(axis=0)
+                n_w += 1
+                if args_cli.log_weights:
+                    w_log.append(weights_e.astype(np.float32).copy())
+                    plant_log.append(np.stack([_plant_row(e) for e in range(N)])
+                                     if plant_feat else np.zeros((N, 5), dtype=np.float32))
 
         x0 = torch.cat([pos_c, quat_c, v_c, w_c], dim=-1).cpu().numpy()
         for e in range(N):
@@ -503,13 +708,14 @@ def main() -> None:
                 d_wrench=d_wrench[e],
             )
             t0 = time.perf_counter()
-            out = mpcs[e].solve(x0[e], P, weights, want_sensitivity=False,
-                                init_state_traj=bool(cold[e]))
+            out = mpcs[e].solve(x0[e], P, weights if policy is None else weights_e[e],
+                                want_sensitivity=False, init_state_traj=bool(cold[e]))
             t_solve += time.perf_counter() - t0
             n_solve += 1
             if out["status"] != 0:
                 n_fail += 1
             sat_prev[e] = np.abs(out["u0_cmd"]).max() > 0.98
+            sat_ema[e] = 0.99 * sat_ema[e] + 0.01 * float(sat_prev[e])
             if sat_prev[e]:
                 sat_steps += 1
             action[e] = torch.as_tensor(out["u0_cmd"], dtype=torch.float32, device=dev)
@@ -527,8 +733,13 @@ def main() -> None:
 
         pos_n = env._robot.data.root_pos_w - env.scene.env_origins
         quat_n = env._robot.data.root_quat_w
-        _, _, yaw_n = euler_xyz_from_quat(quat_n)
+        roll_n, pitch_n, yaw_n = euler_xyz_from_quat(quat_n)
         up_z = _body_up(quat_n)[:, 2].clamp(-1.0, 1.0)
+        # Roll and pitch SEPARATELY, not just the combined tilt: under the fixed TAM the pitch row
+        # of the allocation matrix is all zeros, so an attitude result is uninterpretable until the
+        # actuated axis (roll) is split from the unactuated one (pitch). Kept out of
+        # ``TrajectoryLog.FIELDS`` on purpose -- that tuple is a contract play.py must also fill.
+        rp_log.append(torch.stack([_wrap_pi(roll_n), _wrap_pi(pitch_n)]).detach().cpu())
         wall_dist = geometry.sonar_wall_distance(
             pos_n[:, :2], yaw_n, env._sonar_mount_nom, env._sonar_yaw_nom, cfg.tank_radius
         )
@@ -545,6 +756,11 @@ def main() -> None:
 
         if dones.any():
             reset_internal()
+            if policy is not None:
+                # Same rule as the estimator: the feature history describes the episode that just
+                # ended, so carrying it across a reset feeds the new spawn the old vehicle's past.
+                for e in torch.nonzero(dones).flatten().tolist():
+                    policies[e].reset_history()
             if ests:
                 reset_estimator(dones)  # only the envs that actually reset
             if obs_list:
@@ -566,11 +782,22 @@ def main() -> None:
                   f" |u|max={float(action[0].abs().max()):.2f}")
 
     traj = log.as_arrays(step_dt=dt)
+    if w_log:
+        traj["werr_t"] = np.stack(w_log)[:, :, :len(werr)]     # (T, N, NE)
+        traj["wu_t"] = np.stack(w_log)[:, :, len(werr):]       # (T, N, nu)
+        traj["plant_t"] = np.stack(plant_log)                  # (T, N, N_PLANT)
+    if rp_log:
+        rp = torch.stack(rp_log).numpy()          # (T, 2, N)
+        traj["roll_deg"] = np.rad2deg(rp[:, 0, :])
+        traj["pitch_deg"] = np.rad2deg(rp[:, 1, :])
     sway_step = cfg.scan.ref_step_s if cfg.scan.ref_step_s > 0.0 else cfg.scan.ref_step
     metrics = em.compute_metrics(
         traj, step_dt=dt, d_ref=cfg.d_ref,
         heave_target=cfg.scan.ref_step / dt if cfg.scan.ref_step > 0.0 else None,
         sway_target=sway_step / dt if sway_step > 0.0 else None,
+        # NOTE the local `sway_step` above is the per-STEP ramp rate; `cfg.scan.sway_step` is the
+        # arc length one sway leg is meant to advance. The coverage metric needs the latter.
+        sway_step=cfg.scan.sway_step,
         episode=None if args_cli.score_episode < 0 else args_cli.score_episode,
         episode_length_s=cfg.episode_length_s,
         settle_s=args_cli.settle_s,
@@ -602,7 +829,11 @@ def main() -> None:
               f"ukfm {metrics['estimator']['ukfm_fixes']}  gated {metrics['estimator']['sonar_gated']}")
     metrics["mpc"] = {
         "horizon": args_cli.horizon, "dt_mpc": args_cli.dt_mpc, "rti_iters": args_cli.rti_iters,
-        "werr": werr.tolist(), "wu": DEFAULT_WU,
+        # `werr`/`wu` are the FIXED vector; with --policy_ckpt they are only the init and the
+        # solver never sees them, so `werr_emitted_mean` is the one to read for a policy run.
+        "werr": werr.tolist(), "wu": wu_val,
+        "werr_emitted_mean": (w_sum[:len(werr)] / max(n_w, 1)).tolist() if n_w else None,
+        "wu_emitted_mean": (w_sum[len(werr):] / max(n_w, 1)).tolist() if n_w else None,
         "solve_ms_mean": 1e3 * t_solve / max(1, n_solve),
         "solve_fail_frac": n_fail / max(1, n_solve),
         "saturated_step_frac": sat_steps / max(1, n_solve),

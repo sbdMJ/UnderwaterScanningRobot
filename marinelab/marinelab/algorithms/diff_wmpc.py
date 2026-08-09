@@ -51,7 +51,122 @@ import numpy as np
 import torch
 from torch import nn
 
-__all__ = ["WeightPolicy", "DiffWMPCLearner", "WallScanLossCfg", "wallscan_loss"]
+__all__ = ["WeightPolicy", "StaticWeights", "DiffWMPCLearner", "WallScanLossCfg", "wallscan_loss",
+           "FEAT_MODES", "N_PREVIEW", "N_PLANT", "PLANT_NAMES", "preview_stages",
+           "feature_dim", "build_features"]
+
+# ---------------------------------------------------------------------------
+# Policy input. Three modes, because the original port and the source paper disagree about
+# what the policy should even see.
+#
+# Jahncke et al., RA-L 11(3) 2026 (the paper this module is a port of) feed the policy a
+# LOOK-AHEAD ON THE REFERENCE and nothing else: five upcoming velocities and five upcoming
+# curvatures over a 2.55 s preview (their Fig. 3). Current tracking error is not an input.
+# The whole mechanism is anticipation -- their Fig. 5 shows the steering-rate weight tightening
+# *before* turn-in, and their headline 50% lateral-deviation gain over the best static weights
+# is measured under model mismatch.
+#
+# This port shipped `error_phase`: the current 12-D error plus the current phase index. That is
+# purely reactive -- it cannot represent "a sway leg starts in 0.6 s", only "I am in a sway leg
+# now" -- so anticipation is structurally impossible under it, whatever the network learns.
+# Measured on `dw_ekf` 2026-08-06: its weights DO vary across the four phases (median 15%), but
+# the variation sits in entries with no leverage (`w_x` swings 104% while ranging 57-171 against
+# a radial weight of 4265; `roll`, `v_z`, `s`, `radial` are flat), and freezing the vector
+# reproduced the live policy on every closed-loop metric. See scripts/probe_weight_schedule.py.
+#
+# `preview` is the paper-faithful analogue for wallscan: the scan's DESCEND/SWAY_A/ASCEND/SWAY_B
+# cycle is the straights/corners structure, and (v_z_des, v_tan_des) previewed over the horizon
+# is exactly "which leg am I in and when does it switch". `both` is the hedge, for ablating
+# whether dropping the error term costs anything.
+#
+# `error_phase` stays the DEFAULT so `checkpoints/dw_ekf/policy_final.pt` keeps its meaning.
+FEAT_MODES = ("error_phase", "preview", "both")
+N_PREVIEW = 5          # matches the paper's five look-ahead samples
+
+# Optional PLANT block, appended to any mode. This is the wallscan-specific reading of the
+# paper's idea, and it is not cosmetic -- it changes what the schedule can possibly be about.
+#
+# The racecar has ONE car and a track that varies, so a reference look-ahead is the right input.
+# Here the reference barely varies (four legs at piecewise-constant speed, and `reference_preview`
+# already hands the whole ramp to the solver), while the PLANT varies enormously: `Eval` draws
+# buoyancy +-34 N, CoB +-5 cm, damping x0.5-1.5 per episode. A single weight vector must
+# compromise across all of those vehicles; a policy that can identify which one it is riding does
+# not have to. That is the axis on which weights-varying can beat a fixed vector here.
+#
+# Channels, chosen from the observer measurements rather than by taking all six:
+#   d_m(3)   body moments -- the ablation found every effect lives in the moment channels, and
+#            they come from the gyro, which is genuinely 3-axis on real hardware.
+#   d_f_z    world-z force = the buoyancy residual. Physically CONSTANT per episode, so it is
+#            the single most informative scalar identifying the vehicle.
+#   sat      recent saturated-step fraction: "I am out of authority", trivially available on
+#            hardware and the state in which the weights matter least and the model matters most.
+# EXCLUDED d_f_x, d_f_y: measured to be damping DR resolved through a tilted hull, i.e. velocity
+# dependent, so as an episode-constant identity signal they are noise. Dropping them also limits
+# the GT leak, since `estimator_loop` still passes body v_z through from ground truth.
+N_PLANT = 5
+PLANT_NAMES = ("d_m_x", "d_m_y", "d_m_z", "d_f_z", "sat_frac")
+
+
+def preview_stages(n_stages: int, n_preview: int = N_PREVIEW) -> list[int]:
+    """Evenly spaced look-ahead stage indices, excluding the current one.
+
+    Stage 0 is where the vehicle already is; previewing it would just restate the setpoint the
+    error term already carries. At the default N=30 x 0.05 s this gives 0.30/0.60/.../1.50 s.
+    """
+    if n_stages < n_preview:
+        raise ValueError(f"n_stages ({n_stages}) must be >= n_preview ({n_preview})")
+    return [int(round(n_stages * (i + 1) / n_preview)) for i in range(n_preview)]
+
+
+def feature_dim(mode: str, ne: int, n_preview: int = N_PREVIEW, *, plant: bool = False) -> int:
+    """Input width for `mode`. Kept next to :func:`build_features` so the two cannot drift."""
+    if mode not in FEAT_MODES:
+        raise ValueError(f"mode must be one of {FEAT_MODES}; got {mode!r}")
+    preview = 2 * n_preview                      # (v_z_des, v_tan_des) per look-ahead stage
+    base = preview if mode == "preview" else ne + 2 + (preview if mode == "both" else 0)
+    return base + (N_PLANT if plant else 0)
+
+
+def build_features(mode: str, *, e_now: torch.Tensor, phase: torch.Tensor,
+                   ref: dict[str, torch.Tensor], n_stages: int, env: int = 0,
+                   n_preview: int = N_PREVIEW, sym_sway: bool = False,
+                   plant: "np.ndarray | torch.Tensor | None" = None) -> torch.Tensor:
+    """Assemble the policy input for ONE env. Shared by the trainer and the runner on purpose:
+    a policy evaluated on a different feature layout than it was trained on fails silently, the
+    same failure mode the `WeightPolicy` bounds buffers were made to close.
+
+    ``e_now`` is that env's (ne,) error, ``phase`` its scalar phase, ``ref`` the dict of
+    ``[n_envs, n_stages+1]`` tensors from ``mpc_reference.reference_preview``, and ``env`` the
+    row of ``ref`` to read. Per-env by construction: with a preview feature the weights become
+    phase-dependent, and envs run independent phases, so one shared feature vector would hand
+    seven of eight vehicles the wrong weights — the same shape as the one-solver-for-N-envs bug.
+    """
+    if mode not in FEAT_MODES:
+        raise ValueError(f"mode must be one of {FEAT_MODES}; got {mode!r}")
+    parts = []
+    if mode in ("error_phase", "both"):
+        ph = phase.reshape(()).float()
+        parts += [e_now.detach().reshape(-1).cpu(),
+                  torch.stack([torch.sin(2 * math.pi * ph / 4),
+                               torch.cos(2 * math.pi * ph / 4)]).cpu()]
+    if mode in ("preview", "both"):
+        ks = preview_stages(n_stages, n_preview)
+        parts.append(torch.stack([ref["v_z_des"][env, k] for k in ks]).detach().cpu())
+        # sym_sway: |v_tan| instead of v_tan. Cost weights multiply SQUARED errors, so SWAY_A
+        # and SWAY_B -- the same motion mirrored -- must get identical weights. With the signed
+        # input a policy CAN split them, and dw_both_lu1 did (head_x/radial 0.743 vs 1.059,
+        # measured 2026-08-07), which is overfitting, not a schedule.
+        # Defaults to False because dw_preview / dw_both / dw_both_lu1 were all trained on the
+        # signed input; flipping it silently would change what those checkpoints do. The trainer
+        # stamps its choice into the checkpoint and the runner reads it back.
+        vt = torch.stack([ref["v_tan_des"][env, k] for k in ks]).detach().cpu()
+        parts.append(vt.abs() if sym_sway else vt)
+    if plant is not None:
+        t = torch.as_tensor(plant, dtype=torch.float32).reshape(-1).cpu()
+        if t.numel() != N_PLANT:
+            raise ValueError(f"plant must have {N_PLANT} entries {PLANT_NAMES}; got {t.numel()}")
+        parts.append(t)
+    return torch.cat(parts).float()
 
 
 def _inv_sigmoid(y: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -362,3 +477,55 @@ class DiffWMPCLearner:
         if "opt" in state:
             self.opt.load_state_dict(state["opt"])
         self.n_updates = int(state.get("n_updates", 0))
+
+
+class StaticWeights(nn.Module):
+    """Diff-MPC (the paper's STATIC variant): one weight vector, optimized directly.
+
+    Algorithm 1 line 4 branches on exactly this — ``theta_k = theta`` for Diff-MPC versus
+    ``theta_k = pi_theta(o_k)`` for Diff-WMPC. Everything downstream is shared, so this module
+    presents the same interface as :class:`WeightPolicy` (``forward(feat) -> weights``,
+    ``reset_history()``) and the identical gradient path carries it: the loss gradient reaches
+    ``d L / d p_global`` through the solver sensitivity either way, and here it lands on a bare
+    parameter instead of a network's output.
+
+    It exists to make the comparison honest. Freezing a trained Diff-WMPC policy at its emitted
+    mean — how `flu1` was built — is NOT Diff-MPC: a mean is not the argmin of anything, so
+    beating it says less than beating a vector that was actually optimized as a constant. Under
+    domain randomization this is also the sharper question, because a single vector must
+    compromise across every drawn vehicle while a policy conditioned on plant estimates need not.
+
+    Bounds travel as buffers for the same reason they do in :class:`WeightPolicy`: they are part
+    of the output mapping, so a checkpoint loaded against different bounds silently means
+    something else.
+    """
+
+    def __init__(self, feat_dim: int, ne: int, nu: int, *, history_len: int = 0,
+                 werr_init: np.ndarray | None = None, wu_init: np.ndarray | None = None,
+                 werr_lb: float = 0.1, werr_ub: float = 5000.0,
+                 wu_lb: float = 5e-3, wu_ub: float = 5.0, log_scale: bool = True, **_ignored):
+        super().__init__()
+        self.feat_dim, self.ne, self.nu = int(feat_dim), int(ne), int(nu)
+        self.register_buffer("werr_lb", _as_bound(werr_lb, self.ne))
+        self.register_buffer("werr_ub", _as_bound(werr_ub, self.ne))
+        self.register_buffer("wu_lb", _as_bound(wu_lb, self.nu))
+        self.register_buffer("wu_ub", _as_bound(wu_ub, self.nu))
+        self.log_scale = bool(log_scale)
+        w0 = np.concatenate([
+            np.asarray(werr_init, float) if werr_init is not None else np.full(self.ne, 1.0),
+            np.asarray(wu_init, float) if wu_init is not None else np.full(self.nu, 0.01)])
+        lb = torch.cat([self.werr_lb, self.wu_lb])
+        ub = torch.cat([self.werr_ub, self.wu_ub])
+        t = torch.as_tensor(w0, dtype=torch.float32).clamp(lb * 1.001, ub * 0.999)
+        frac = ((torch.log(t) - torch.log(lb)) / (torch.log(ub) - torch.log(lb)) if self.log_scale
+                else (t - lb) / (ub - lb))
+        self.raw = nn.Parameter(_inv_sigmoid(frac))
+
+    def reset_history(self) -> None:
+        """No history to reset — kept so callers need not know which variant they hold."""
+
+    def forward(self, feat: torch.Tensor) -> torch.Tensor:  # noqa: ARG002  (feat is ignored)
+        werr = _map_to_range(self.raw[: self.ne], self.werr_lb, self.werr_ub,
+                             log_scale=self.log_scale)
+        wu = _map_to_range(self.raw[self.ne:], self.wu_lb, self.wu_ub, log_scale=self.log_scale)
+        return torch.cat([werr, wu])

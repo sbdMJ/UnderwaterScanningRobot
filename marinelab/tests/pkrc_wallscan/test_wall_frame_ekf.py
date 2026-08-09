@@ -395,3 +395,44 @@ def test_dvl_hold_steps_from_the_published_ping_rate():
     # 1/(4*0.02) = 12.5 and Python rounds half to even, so 12; either is defensible at the
     # published worst-case rate.
     assert dvl_hold_steps(SensorCfg(dvl_rate_hz=4.0), 0.02) == 12
+
+
+# ---------------------------------------------------------------------------
+# 3-axis instrument modelling (WallFrameEstimator.full_3axis)
+#
+# The default passes body v_z and the roll/pitch rates through from ground truth. That is
+# under-modelling -- a DVL-A50 is 4-beam and a 3DM-GV7 is 3-axis -- and it flatters the vertical
+# axis, which is the wallscan's primary motion, plus wrench_observer's force channel, which is
+# computed FROM v_z. These tests pin both behaviours so neither can drift silently.
+# ---------------------------------------------------------------------------
+def test_full_3axis_stops_the_ground_truth_passthrough():
+    import numpy as np
+    import torch
+    from marinelab.tasks.pkrc_wallscan.estimator_loop import WallFrameEstimator
+    from marinelab.tasks.pkrc_wallscan.sensors import SensorCfgDatasheet
+
+    def make(full):
+        return WallFrameEstimator(
+            scfg=SensorCfgDatasheet(), tank_radius=6.0, step_dt=0.02,
+            sonar_mount_nom=torch.tensor([[0.10, 0.0]]), sonar_yaw_nom=0.0,
+            gyro_bias=0.0, rng=np.random.default_rng(0), full_3axis=full)
+
+    pos = torch.tensor([[4.4, 0.0, 5.0]])
+    quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    v_b = torch.tensor([[0.05, 0.02, -0.20]])       # a real descent: v_z is the big one
+    w_b = torch.tensor([[0.03, -0.04, 0.01]])
+
+    for est, full in ((make(False), False), (make(True), True)):
+        est.reset(pos, quat, 0.0)
+        out = est.step(0, pos, quat, v_b, w_b, 0.0, 0.0, 0.0, 0.0)
+        vz_is_gt = abs(float(out.v_b[0, 2]) - float(v_b[0, 2])) < 1e-9
+        wxy_is_gt = torch.allclose(out.w_b[0, :2], w_b[0, :2], atol=1e-9)
+        assert vz_is_gt == (not full), f"full_3axis={full}: v_z passthrough wrong"
+        assert wxy_is_gt == (not full), f"full_3axis={full}: w_xy passthrough wrong"
+
+
+def test_full_3axis_default_is_off_so_published_numbers_hold():
+    from marinelab.tasks.pkrc_wallscan.estimator_loop import WallFrameEstimator
+    import dataclasses
+    fields = {f.name: f for f in dataclasses.fields(WallFrameEstimator)}
+    assert fields["full_3axis"].default is False

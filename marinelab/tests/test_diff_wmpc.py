@@ -385,3 +385,174 @@ def test_weight_bounds_round_trip_in_the_state_dict():
     trained.reset_history()
     loaded.reset_history()
     assert torch.allclose(trained(f), loaded(f), atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Policy input layout (FEAT_MODES / build_features)
+#
+# This is the contract between the trainer and the runner: they must assemble the SAME vector
+# or a checkpoint silently produces different weights than it was trained to produce. The
+# `preview` mode is the source paper's design (a look-ahead on the reference, no current
+# error); `error_phase` is the legacy reactive one that was measured to collapse to a constant.
+# ---------------------------------------------------------------------------
+from marinelab.algorithms.diff_wmpc import (  # noqa: E402
+    FEAT_MODES,
+    N_PREVIEW,
+    build_features,
+    feature_dim,
+    preview_stages,
+)
+
+
+def _ref(n_envs=3, n_stages=30):
+    """[n_envs, n_stages+1] reference; each env distinct, so reading the wrong row shows up
+    as a wrong value rather than as a silent pass."""
+    base = torch.arange(n_stages + 1, dtype=torch.float32)
+    return {
+        "z_ref": torch.stack([base + 100 * e for e in range(n_envs)]),
+        "s_ref": torch.stack([base + 200 * e for e in range(n_envs)]),
+        "v_z_des": torch.stack([base + 300 * e for e in range(n_envs)]),
+        "v_tan_des": torch.stack([base + 400 * e for e in range(n_envs)]),
+    }
+
+
+def test_feature_dim_matches_built_vector():
+    ref, phase, e_now = _ref(), torch.tensor(2.0), torch.arange(NE, dtype=torch.float32)
+    for mode in FEAT_MODES:
+        got = build_features(mode, e_now=e_now, phase=phase, ref=ref, n_stages=30)
+        assert got.shape == (feature_dim(mode, NE),), mode
+
+
+def test_preview_mode_carries_no_current_error():
+    """The paper's policy sees the upcoming reference only. If the error leaked in, changing it
+    would change the features -- and the anticipation claim would be untestable."""
+    ref = _ref()
+    a = build_features("preview", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                       ref=ref, n_stages=30)
+    b = build_features("preview", e_now=torch.full((NE,), 9.0), phase=torch.tensor(3.0),
+                       ref=ref, n_stages=30)
+    assert torch.equal(a, b)
+
+
+def test_preview_reads_the_requested_env_row():
+    """Per-env by construction: sharing one feature vector across envs running independent
+    phases is the bug this argument exists to prevent."""
+    ref = _ref()
+    f0 = build_features("preview", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                        ref=ref, n_stages=30, env=0)
+    f2 = build_features("preview", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                        ref=ref, n_stages=30, env=2)
+    assert not torch.equal(f0, f2)
+    # v_z_des row offset is 300 per env, and the first half of the vector is v_z_des
+    assert torch.allclose(f2[:N_PREVIEW] - f0[:N_PREVIEW], torch.full((N_PREVIEW,), 600.0))
+
+
+def test_preview_stages_are_look_ahead_only():
+    ks = preview_stages(30)
+    assert len(ks) == N_PREVIEW
+    assert ks == sorted(ks) and ks[0] > 0, "stage 0 is where the vehicle already is"
+    assert ks[-1] == 30, "the preview must reach the end of the horizon"
+
+
+def test_preview_changes_when_the_upcoming_reference_changes():
+    """The whole mechanism: an upcoming phase switch must move the features BEFORE it arrives."""
+    ref = _ref()
+    flat = {k: torch.zeros_like(v) for k, v in ref.items()}
+    step = {k: v.clone() for k, v in flat.items()}
+    step["v_z_des"][:, 20:] = -0.2          # a heave leg starting 1.0 s into the horizon
+    a = build_features("preview", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                       ref=flat, n_stages=30)
+    b = build_features("preview", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                       ref=step, n_stages=30)
+    assert not torch.equal(a, b)
+
+
+def test_both_mode_is_the_concatenation():
+    ref, phase, e_now = _ref(), torch.tensor(1.0), torch.arange(NE, dtype=torch.float32)
+    ep = build_features("error_phase", e_now=e_now, phase=phase, ref=ref, n_stages=30)
+    pv = build_features("preview", e_now=e_now, phase=phase, ref=ref, n_stages=30)
+    both = build_features("both", e_now=e_now, phase=phase, ref=ref, n_stages=30)
+    assert torch.equal(both, torch.cat([ep, pv]))
+
+
+def test_unknown_mode_is_rejected():
+    with pytest.raises(ValueError):
+        build_features("lookahead", e_now=torch.zeros(NE), phase=torch.tensor(0.0),
+                       ref=_ref(), n_stages=30)
+    with pytest.raises(ValueError):
+        feature_dim("lookahead", NE)
+
+
+def test_policy_accepts_each_mode_width():
+    ref, phase, e_now = _ref(), torch.tensor(0.0), torch.zeros(NE)
+    for mode in FEAT_MODES:
+        pol = WeightPolicy(feature_dim(mode, NE), NE, NU)
+        w = pol(build_features(mode, e_now=e_now, phase=phase, ref=ref, n_stages=30))
+        assert w.shape == (NE + NU,) and torch.isfinite(w).all()
+
+
+def test_error_phase_mode_is_bit_identical_to_the_legacy_inline_build():
+    """`checkpoints/dw_ekf/policy_final.pt` was trained against the inline expression the
+    trainer used before build_features existed. If this drifts, that checkpoint's published
+    numbers stop being reproducible."""
+    ref, e_now = _ref(), torch.arange(NE, dtype=torch.float32)
+    for ph in (0.0, 1.0, 2.0, 3.0):
+        phase = torch.tensor(ph)
+        legacy = torch.cat([e_now.cpu(), torch.stack([
+            torch.sin(2 * math.pi * phase / 4), torch.cos(2 * math.pi * phase / 4)]).cpu()])
+        got = build_features("error_phase", e_now=e_now, phase=phase, ref=ref, n_stages=30)
+        assert torch.equal(got, legacy), ph
+
+
+def test_sym_sway_makes_mirrored_sway_legs_identical():
+    """SWAY_A and SWAY_B are the same motion mirrored, and weights multiply squared errors, so
+    they must map to the same features once the symmetry is declared."""
+    n = 30
+    a = {"v_z_des": torch.zeros(1, n + 1), "v_tan_des": torch.full((1, n + 1), 0.1),
+         "z_ref": torch.zeros(1, n + 1), "s_ref": torch.zeros(1, n + 1)}
+    b = {**a, "v_tan_des": torch.full((1, n + 1), -0.1)}
+    kw = dict(e_now=torch.zeros(NE), phase=torch.tensor(0.0), n_stages=n)
+    assert not torch.equal(build_features("preview", ref=a, **kw),
+                           build_features("preview", ref=b, **kw)), "signed default must differ"
+    assert torch.equal(build_features("preview", ref=a, sym_sway=True, **kw),
+                       build_features("preview", ref=b, sym_sway=True, **kw))
+
+
+def test_plant_block_width_and_placement():
+    from marinelab.algorithms.diff_wmpc import N_PLANT
+    ref = _ref()
+    kw = dict(e_now=torch.zeros(NE), phase=torch.tensor(0.0), ref=ref, n_stages=30)
+    base = build_features("both", **kw)
+    plant = [1.0, 2.0, 3.0, 4.0, 5.0]
+    got = build_features("both", plant=plant, **kw)
+    assert got.shape == (feature_dim("both", NE, plant=True),)
+    assert torch.equal(got[:base.numel()], base), "plant block must APPEND, not reorder"
+    assert torch.equal(got[base.numel():], torch.tensor(plant))
+    with pytest.raises(ValueError):
+        build_features("both", plant=[1.0, 2.0], **kw)
+    assert feature_dim("both", NE, plant=True) - feature_dim("both", NE) == N_PLANT
+
+
+def test_static_weights_ignore_features_and_stay_in_bounds():
+    from marinelab.algorithms.diff_wmpc import StaticWeights
+    init = np.arange(1, NE + 1) * 10.0
+    m = StaticWeights(FEAT, NE, NU, werr_init=init, wu_init=np.full(NU, 0.01))
+    a = m(torch.zeros(FEAT))
+    b = m(torch.randn(FEAT) * 100)
+    assert torch.equal(a, b), "Diff-MPC is theta_k = theta; the input must not matter"
+    assert torch.allclose(a[:NE], torch.tensor(init, dtype=torch.float32), rtol=1e-3)
+    assert (a[:NE] >= m.werr_lb).all() and (a[:NE] <= m.werr_ub).all()
+
+
+def test_static_weights_are_learnable_and_roundtrip():
+    from marinelab.algorithms.diff_wmpc import StaticWeights
+    m = StaticWeights(FEAT, NE, NU, werr_init=np.full(NE, 40.0), wu_init=np.full(NU, 0.01))
+    before = m(torch.zeros(FEAT)).clone()
+    m(torch.zeros(FEAT)).sum().backward()
+    assert m.raw.grad is not None and torch.isfinite(m.raw.grad).all()
+    with torch.no_grad():
+        m.raw += 0.5
+    assert not torch.equal(m(torch.zeros(FEAT)), before)
+    m2 = StaticWeights(FEAT, NE, NU)
+    m2.load_state_dict(m.state_dict())
+    assert torch.equal(m2(torch.zeros(FEAT)), m(torch.zeros(FEAT)))

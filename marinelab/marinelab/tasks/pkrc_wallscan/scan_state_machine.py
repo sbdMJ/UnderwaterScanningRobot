@@ -41,6 +41,24 @@ class ScanCfg:
     # via the TAM My coupling roughly in proportion to speed, so the sway leg can run
     # slower than the heave legs. 0 = use ref_step for both axes.
     ref_step_s: float = 0.0
+    # Snap the arc ramp to the vehicle when a VERTICAL phase begins (default off).
+    #
+    # A sway leg may clear up to ``reach_eps`` short of its target, but ``s_ramp`` keeps slewing
+    # toward ``s_ref`` afterwards -- through the vertical leg that follows. Measured 2026-08-08
+    # (and first diagnosed 2026-07-26): the reference itself moves 55-56 cm sideways during a
+    # leg that should be vertical, identically at every trim level, and that is the entire
+    # coverage floor left once the vehicle is perfectly trimmed. The scan draws diagonals
+    # because it was asked to.
+    #
+    # Tightening ``reach_eps`` also removes the bleed -- by making the vehicle actually go there
+    # -- and costs everything: measured 0.6 -> 0.1 takes the reference motion 55.3 -> 1.4 cm but
+    # cycles 1.83 -> 0.08, i.e. the scan stops. Snapping abandons the leftover instead of
+    # chasing it, which for a wall inspection is the right call: the next vertical line lands
+    # 0.9 m over instead of 1.0 m, rather than being drawn as a diagonal.
+    #
+    # Off by default: every published number, and the RL policy's whole training, ran with the
+    # bleed present.
+    snap_ramp_on_vertical: bool = False
 
 
 class ScanState:
@@ -91,6 +109,7 @@ def step(state: ScanState, z: torch.Tensor, s: torch.Tensor, cfg: ScanCfg, z_lat
     state.phase = torch.where(advanced, (state.phase + phase_inc) % 4, state.phase)
     state._hold = torch.where(advanced, torch.zeros_like(state._hold), state._hold)
 
+    entering_vertical = advanced & ((state.phase == DESCEND) | (state.phase == ASCEND))
     entering_sway = advanced & ((state.phase == SWAY_A) | (state.phase == SWAY_B))
     # s_ref bumps from the CURRENT s, not the previous s_ref (07-25 trace: ~1 m of lateral
     # drift during the descend landed s inside the old absolute-ladder band, so the sway
@@ -99,12 +118,27 @@ def step(state: ScanState, z: torch.Tensor, s: torch.Tensor, cfg: ScanCfg, z_lat
     state.s_ref = torch.where(entering_sway, s + state.sway_dir * cfg.sway_step, state.s_ref)
     state.z_hold = torch.where(entering_sway, z_latch, state.z_hold)
 
+    if cfg.snap_ramp_on_vertical:
+        # Give up whatever the sway leg did not cover, so the vertical leg has no tangential
+        # command left to serve. Both the target and the ramp move, or the ramp would simply
+        # slew back toward the stale target on the next call.
+        state.s_ref = torch.where(entering_vertical, s, state.s_ref)
+        state.s_ramp = torch.where(entering_vertical, s, state.s_ramp)
+
+
     is_sway_out = (state.phase == SWAY_A) | (state.phase == SWAY_B)
     is_ascend_out = state.phase == ASCEND
     z_ref = torch.where(is_sway_out, state.z_hold, torch.where(is_ascend_out, torch.full_like(z, cfg.z_top), torch.full_like(z, cfg.z_bottom)))
 
     phase_f = state.phase.to(z.dtype)
     phase_sc = torch.stack([torch.sin(2 * math.pi * phase_f / 4), torch.cos(2 * math.pi * phase_f / 4)], dim=-1)
+
+    if cfg.snap_ramp_on_vertical:
+        # Give up whatever the sway leg did not cover, so the vertical leg has no tangential
+        # command left to serve. Both the target and the ramp move, or the ramp would simply
+        # slew back toward the stale target on the next call.
+        state.s_ref = torch.where(entering_vertical, s, state.s_ref)
+        state.s_ramp = torch.where(entering_vertical, s, state.s_ramp)
 
     if cfg.ref_step > 0.0:
         # Slew the emitted refs toward the phase targets at ref_step per call. Reach

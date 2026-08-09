@@ -269,11 +269,48 @@ def _leg_speed(traj: dict[str, Any], channel: str, phases: tuple[int, ...], sel,
     return dist / secs if secs > 0 else float("nan")
 
 
+def _tangential_drift(traj: dict[str, Any], sel) -> float:
+    """Mean |arc displacement| inside a complete VERTICAL leg, in metres.
+
+    Controller-independent coverage measure. During DESCEND/ASCEND the scan plan says the
+    vehicle holds its arc position and only changes depth, so the ideal is exactly zero for
+    every run, whatever reference its own state machine happened to generate. That matters:
+    ``|s_gt - s_ref|`` compares a controller against ITS OWN plan, and the state machine only
+    advances a phase once the error is small, so a lagging controller gets a lagging reference
+    and is flattered. This quantity has no such loophole.
+
+    Measured 2026-08-08 on a stress-DR run whose every other metric looked healthy (wall 4.7 cm,
+    both leg speeds on target, 2.00 cycles): the first DESCEND moved 1.36 m along the wall.
+    """
+    import numpy as np
+
+    d = [abs(float(traj["s_gt"][b - 1, e] - traj["s_gt"][a, e]))
+         for e, a, b in _legs(traj, HEAVE_PHASES, sel)]
+    return float(np.mean(d)) if d else float("nan")
+
+
+def _sway_step_error(traj: dict[str, Any], sel, sway_step: float | None) -> float:
+    """Mean |net arc advance over a complete SWAY leg - sway_step|, in metres.
+
+    The other half of coverage: a sway leg is supposed to advance the scan by exactly one
+    ``sway_step``. Overshooting duplicates wall, undershooting misses it. Also independent of
+    the controller's own reference.
+    """
+    import numpy as np
+
+    if sway_step is None:
+        return float("nan")
+    d = [abs(abs(float(traj["s_gt"][b - 1, e] - traj["s_gt"][a, e])) - sway_step)
+         for e, a, b in _legs(traj, SWAY_PHASES, sel)]
+    return float(np.mean(d)) if d else float("nan")
+
+
 def _leg_count(traj: dict[str, Any], phases: tuple[int, ...], sel) -> int:
     return sum(1 for _ in _legs(traj, phases, sel))
 
 
-def _rate_metrics(traj: dict[str, Any], sel, step_dt: float, d_ref: float | None) -> dict[str, Any]:
+def _rate_metrics(traj: dict[str, Any], sel, step_dt: float, d_ref: float | None,
+                  sway_step: float | None = None) -> dict[str, Any]:
     """The metrics that are averages/rates over the selected rows.
 
     Split out so the settled window reports exactly the same quantities as the full window
@@ -286,6 +323,18 @@ def _rate_metrics(traj: dict[str, Any], sel, step_dt: float, d_ref: float | None
     sway = sel & _phase_mask(traj, SWAY_PHASES)
     crab = np.degrees(np.abs(wrap_to_pi(traj["yaw"] - traj["theta"])))
     s_err = np.abs(traj["s"] - traj["s_gt"])
+    # ARC-LENGTH TRACKING error: how far the vehicle actually is from the arc position the scan
+    # asked for. Distinct from `s_hat_err`, which compares the ESTIMATE to ground truth -- a
+    # perfect estimator still leaves this untouched. Added 2026-08-08 after a trajectory plot
+    # showed stress-DR runs drifting tangentially through the vertical legs (first DESCEND moved
+    # 1.36 m along the wall against a reference of 0.00) while every existing metric looked
+    # healthy: wall distance 4.7 cm, both leg speeds on target, 2.00 cycles.
+    #
+    # For a wall INSPECTION this is coverage error, so it belongs next to standoff rather than in
+    # a diagnostic footnote: scanning a metre away from the planned arc is missed or duplicated
+    # wall either way. Reported with RMS/p95/max as well, because the repo has been bitten before
+    # by a mean that hid the outliers (see the episode-indexing note above).
+    s_track = np.abs(traj["s_gt"] - traj["s_ref"])
     out = {
         "scored_steps": int(sel.sum()),
         "tilt_heave_deg": _mean(traj["tilt_deg"], heave),
@@ -293,6 +342,13 @@ def _rate_metrics(traj: dict[str, Any], sel, step_dt: float, d_ref: float | None
         "tilt_deg": _mean(traj["tilt_deg"], sel),
         "crab_deg": _mean(crab, sel),
         "s_hat_err_cm": _mean(s_err, sel) * 100.0,
+        "s_track_err_cm": _mean(s_track, sel) * 100.0,
+        "s_track_rms_cm": float(np.sqrt(np.mean(np.square(s_track[sel])))) * 100.0 if sel.any() else float("nan"),
+        "s_track_p95_cm": float(np.percentile(s_track[sel], 95)) * 100.0 if sel.any() else float("nan"),
+        "s_track_max_cm": float(s_track[sel].max()) * 100.0 if sel.any() else float("nan"),
+        # Reference-free coverage pair; prefer these when comparing controllers.
+        "heave_drift_cm": _tangential_drift(traj, sel) * 100.0,
+        "sway_step_err_cm": _sway_step_error(traj, sel, sway_step) * 100.0,
         "heave_speed_mps": _leg_speed(traj, "z", HEAVE_PHASES, sel, step_dt),
         "sway_speed_mps": _leg_speed(traj, "s_gt", SWAY_PHASES, sel, step_dt),
         # Path-length rates: equal to the net rates when the leg is monotone, larger when the
@@ -315,6 +371,7 @@ def compute_metrics(
     d_ref: float | None = None,
     heave_target: float | None = None,
     sway_target: float | None = None,
+    sway_step: float | None = None,
     episode: int | None = 0,
     episode_length_s: float | None = None,
     settle_s: float | None = None,
@@ -351,7 +408,7 @@ def compute_metrics(
         "num_steps": int(traj["z"].shape[0]),
         "step_dt": float(step_dt),
         "scored_episode": episode,
-        **_rate_metrics(traj, sel, step_dt, d_ref),
+        **_rate_metrics(traj, sel, step_dt, d_ref, sway_step),
         "cycles_mean": float(np.nanmean(cycles)) if np.isfinite(cycles).any() else float("nan"),
         "cycles_per_env": [None if not np.isfinite(c) else float(c) for c in cycles],
     }
@@ -360,7 +417,8 @@ def compute_metrics(
         # never instead of them, so what was excluded stays visible.
         metrics["settle_s"] = float(settle_s)
         metrics["settled"] = _rate_metrics(
-            traj, _select(traj, episode, settle_s=settle_s, step_dt=step_dt), step_dt, d_ref
+            traj, _select(traj, episode, settle_s=settle_s, step_dt=step_dt), step_dt,
+            d_ref, sway_step
         )
     if heave_target is not None:
         metrics["heave_speed_target_mps"] = float(heave_target)
@@ -440,6 +498,10 @@ def format_metrics(metrics: dict[str, Any]) -> str:
         f" {num('sway_speed_mps', digits=3)} m/s{target}",
         f"{'crab audit (yaw - theta)':<34}{num('crab_deg')} deg",
         f"{'arc-length estimate error (s_hat)':<34}{num('s_hat_err_cm')} cm",
+        f"{'coverage: heave tangential drift':<34}{num('heave_drift_cm')} cm",
+        f"{'coverage: sway step error':<34}{num('sway_step_err_cm')} cm",
+        f"{'arc-length TRACKING error (own ref)':<34}{num('s_track_err_cm')} cm"
+        f"  (p95 {num('s_track_p95_cm')}, max {num('s_track_max_cm')})",
         f"{'scan cycles completed':<34}{num('cycles_mean')}"
         + (f"  (in {metrics['episode_s_mean']:.0f} s/episode)" if "episode_s_mean" in metrics else ""),
     ]

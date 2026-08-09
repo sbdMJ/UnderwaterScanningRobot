@@ -93,6 +93,17 @@ class WallFrameEstimator:
     # them None and the two coincide, which is the no-DR case.
     sonar_mount_true: torch.Tensor | None = None
     sonar_yaw_true: float | None = None
+    # Model the instruments as the 3-AXIS devices they actually are. Left False by default
+    # because every published number in this repo was produced with the passthrough below, and
+    # turning it on makes the estimate strictly worse (which is the point).
+    #
+    # The passthrough: `v_est = v_b.clone()` replaces only [:2], and `w_est = w_b.clone()` only
+    # [2], so body v_z and the roll/pitch rates reach the controller as GROUND TRUTH. A DVL-A50
+    # is a 4-beam instrument and a 3DM-GV7 a 3-axis IMU -- neither has a privileged axis -- so
+    # this is under-modelling, and it flatters two things in particular: the vertical axis is the
+    # wallscan's primary motion, and `wrench_observer`'s force channel is computed FROM v_z, so
+    # any policy conditioned on the observer is being fed a partly ground-truth signal.
+    full_3axis: bool = False
     _bias: dict = field(default_factory=dict)
     _dvl_held: np.ndarray | None = None
     _theta0: float = 0.0
@@ -166,12 +177,23 @@ class WallFrameEstimator:
         # DVL: scale-factor error (the A50 spec is a percentage) then zero-order hold at the
         # published ping rate, because a 15 Hz reading cannot be re-averaged every 50 Hz step.
         hold = dvl_hold_steps(s, self.step_dt)
+        n_ax = 3 if self.full_3axis else 2
         if self._dvl_held is None or i % hold == 0:
-            self._dvl_held = (v_b[0, :2].cpu().numpy() * (1.0 + self._bias["dvl_scale"])
-                              + self.rng.normal(0, s.dvl_noise, 2) + self._bias["dvl"])
+            # Same scale-factor error, noise and hold on every measured axis: the spec is per
+            # instrument, not per axis. Both per-episode draws are 2-vectors historically, so the
+            # third axis takes the mean of the drawn pair rather than silently running unbiased.
+            def _ax(name):
+                v = np.asarray(self._bias[name], dtype=float).reshape(-1)
+                return v[:n_ax] if v.size >= n_ax else np.append(v, float(v.mean()))
+            self._dvl_held = (v_b[0, :n_ax].cpu().numpy() * (1.0 + _ax("dvl_scale"))
+                              + self.rng.normal(0, s.dvl_noise, n_ax) + _ax("dvl"))
         v_meas = self._dvl_held
 
         gyro = float(w_b[0, 2]) + float(self.rng.normal(0, gyro_noise(s))) + self.gyro_bias
+        w_xy_meas = None
+        if self.full_3axis:
+            w_xy_meas = (w_b[0, :2].cpu().numpy()
+                         + self.rng.normal(0, gyro_noise(s), 2) + self.gyro_bias)
         z_meas = float(pos[0, 2]) + float(self.rng.normal(0, s.depth_noise)) + self._bias["depth"]
 
         ukfm = None
@@ -188,9 +210,11 @@ class WallFrameEstimator:
         pos_est = torch.tensor([[self.ekf.r * math.cos(th_hat),
                                  self.ekf.r * math.sin(th_hat), z_meas]], device=dev)
         v_est = v_b.clone()
-        v_est[0, :2] = torch.as_tensor(v_meas, dtype=v_b.dtype, device=dev)
+        v_est[0, :len(v_meas)] = torch.as_tensor(v_meas, dtype=v_b.dtype, device=dev)
         w_est = w_b.clone()
         w_est[0, 2] = gyro
+        if w_xy_meas is not None:
+            w_est[0, :2] = torch.as_tensor(w_xy_meas, dtype=w_b.dtype, device=dev)
         return EstimatorOutput(
             pos=pos_est,
             quat=_quat_from_rpy(roll_m, pitch_m, th_hat + self.ekf.phi, dev).to(quat.dtype),

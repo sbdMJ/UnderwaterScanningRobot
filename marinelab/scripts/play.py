@@ -77,6 +77,18 @@ parser.add_argument(
     help="Which per-env episode index --log_traj scores (0 = the first). -1 pools every logged step.",
 )
 parser.add_argument("--no_plot", action="store_true", default=False, help="Skip the PNG with --log_traj.")
+# --- plant corrections, so an RL checkpoint can be scored on the SAME vehicle as the NMPC -------
+# Both default to the legacy classes, i.e. omitting them reproduces every published RL number.
+# The NMPC results are all measured under `fixed` + `z_slender`; comparing across a plant
+# difference would be comparing two different robots, so these exist to close that gap.
+parser.add_argument("--tam", choices=["shipped", "fixed"], default="shipped",
+                    help="Thruster allocation matrix. 'fixed' = PKRCThrusterCfgFixedTAM, which puts "
+                         "the sway moment arm on roll where a heave differential can cancel it. "
+                         "NOTE the policy was TRAINED on 'shipped', so 'fixed' is off-distribution "
+                         "for it -- that is the deployment question, not a like-for-like one.")
+parser.add_argument("--hydro", choices=["shipped", "z_slender"], default="shipped",
+                    help="Hydrodynamic coefficients. 'z_slender' matches the USD mesh's long axis "
+                         "and roughly halves heave drag; also off-distribution for the checkpoint.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -252,6 +264,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+
+    if args_cli.tam == "fixed" or args_cli.hydro == "z_slender":
+        from marinelab.assets.pkrc import PKRCHydrodynamicsCfgZSlender, PKRCThrusterCfgFixedTAM
+
+        if args_cli.tam == "fixed":
+            env_cfg.thrusters = PKRCThrusterCfgFixedTAM()
+        if args_cli.hydro == "z_slender":
+            env_cfg.hydrodynamics = PKRCHydrodynamicsCfgZSlender()
+        print(f"[INFO] plant overrides: tam={args_cli.tam} hydro={args_cli.hydro}")
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)

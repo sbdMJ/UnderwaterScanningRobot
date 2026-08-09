@@ -487,3 +487,55 @@ def test_a_leg_truncated_by_a_timeout_is_dropped_even_when_a_stub_run_follows():
     m = em.compute_metrics(_log(rows), step_dt=STEP_DT, episode=None)
     assert m["heave_legs_scored"] == 1, "only the bounded leg may be scored"
     assert m["heave_speed_mps"] == pytest.approx(0.2, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Arc-length TRACKING error (coverage), added 2026-08-08.
+#
+# Distinct from s_hat_err (estimate vs truth). A run can have a perfect estimator and still be
+# scanning a metre off the planned arc, which is exactly what stress-DR runs were doing while
+# every other metric looked healthy.
+# ---------------------------------------------------------------------------
+def test_s_track_err_is_reference_tracking_not_estimator_error():
+    # estimator PERFECT (s == s_gt) but the vehicle sits 1 m off the arc the scan asked for
+    tr = _log([_row(s=2.0, s_gt=2.0, s_ref=1.0) for _ in range(200)])
+    m = em.compute_metrics(tr, step_dt=STEP_DT, episode=None)
+    assert m["s_hat_err_cm"] == pytest.approx(0.0, abs=1e-6), "estimator error must stay zero"
+    assert m["s_track_err_cm"] == pytest.approx(100.0, rel=1e-6), "tracking error must see the 1 m"
+
+
+def test_s_track_reports_tail_statistics():
+    rows = [_row(s=0.0, s_gt=0.0, s_ref=0.0) for _ in range(95)]
+    rows += [_row(s=4.0, s_gt=4.0, s_ref=0.0) for _ in range(5)]   # short, large excursion
+    tr = _log(rows)
+    m = em.compute_metrics(tr, step_dt=STEP_DT, episode=None)
+    assert m["s_track_err_cm"] == pytest.approx(20.0, rel=1e-6)      # mean 0.2 m
+    assert m["s_track_max_cm"] == pytest.approx(400.0, rel=1e-6)     # the mean hides this
+    assert m["s_track_rms_cm"] > m["s_track_err_cm"]
+
+
+def test_heave_drift_is_zero_for_a_pure_vertical_leg_and_sees_tangential_motion():
+    """Reference-free coverage: during DESCEND/ASCEND the plan says hold the arc position, so
+    the ideal is zero for every controller regardless of the reference it generated."""
+    # the heave leg must be bounded by a phase change on BOTH sides, or _legs drops it as
+    # incomplete (boundary KIND, not run index -- see the leg-completeness note in this file)
+    clean = [_row(phase=3, z=9.0, s_gt=2.0) for _ in range(50)]
+    clean += [_row(phase=0, z=9.0 - 0.004 * i, s_gt=2.0) for i in range(300)]
+    clean += [_row(phase=1, z=7.8, s_gt=2.0 + 0.002 * i) for i in range(100)]
+    m = em.compute_metrics(_log(clean), step_dt=STEP_DT, episode=None)
+    assert m["heave_drift_cm"] == pytest.approx(0.0, abs=1e-6)
+
+    drift = [_row(phase=3, z=9.0, s_gt=2.0) for _ in range(50)]
+    drift += [_row(phase=0, z=9.0 - 0.004 * i, s_gt=2.0 + 0.003 * i) for i in range(300)]
+    drift += [_row(phase=1, z=7.8, s_gt=2.9) for _ in range(100)]
+    m2 = em.compute_metrics(_log(drift), step_dt=STEP_DT, episode=None)
+    assert m2["heave_drift_cm"] > 80.0, "0.9 m of tangential drift must show up"
+
+
+def test_sway_step_error_measures_advance_against_the_planned_step():
+    rows = [_row(phase=0, z=9.0 - 0.004 * i, s_gt=0.0) for i in range(200)]
+    rows += [_row(phase=1, z=8.2, s_gt=0.006 * i) for i in range(200)]   # advances 1.194 m
+    rows += [_row(phase=2, z=8.2 + 0.004 * i, s_gt=1.194) for i in range(200)]
+    m = em.compute_metrics(_log(rows), step_dt=STEP_DT, episode=None, sway_step=1.0)
+    assert m["sway_step_err_cm"] == pytest.approx(19.4, abs=1.0)
+    assert np.isnan(em.compute_metrics(_log(rows), step_dt=STEP_DT, episode=None)["sway_step_err_cm"])
