@@ -1,0 +1,30 @@
+# E3: ocean-current disturbance adaptation (docs/experiments/experiments_plan.md, SHOULD).
+# Nominal physics (Stage3) + injected current profiles: abrupt reversal (SSI-MPC's
+# ground-effect analogue) and one sinusoidal condition. Methods per plan: proposed,
+# SSI-MPC, Fixed-W (model adaptation is SSI's home ground — report honestly).
+exp: e3_v8a
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  tam: fixed
+
+conditions:
+  step:
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+  sine:
+    current: {type: sine, speed: 0.15, heading_deg: 0.0, period: 30.0}
+
+methods:
+  nominal: {}
+  ssi:
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384          # <- ssi_mpc attempt-2 (re-based, multi-seed) trial 87
+    ssi_kernel_std: 0.18398034704266503
+  diff:
+    ckpt: checkpoints/dw_v8a_mix20/policy_final.pt
+
+seeds: [0, 1, 2]

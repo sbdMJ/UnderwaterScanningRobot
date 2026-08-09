@@ -1,0 +1,41 @@
+# E2(a): zero-shot robustness vs perturbation strength (docs/experiments/experiments_plan.md).
+# Fluid-coefficient DR half-range sweeps ±25/±50/±75% on the stress-Eval task; attitude
+# (±45°) and sensor-mount (±8 cm) stress stay at Eval values. All methods deploy their
+# NOMINAL tuning unchanged (zero-shot); fine-tuning (E2b) is a separate run for the
+# proposed method only, mirroring the parent paper. 3 seeds per sweep cell (review
+# decision: full 5 seeds only at nominal/E1).
+exp: e2_v8a
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  dr25: {dr_fluid_scale: 0.25}
+  dr50: {dr_fluid_scale: 0.50}
+  dr75: {dr_fluid_scale: 0.75}
+
+methods:
+  nominal:
+    tam: fixed
+  bo:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384          # <- ssi_mpc attempt-2 (re-based, multi-seed) trial 87
+    ssi_kernel_std: 0.18398034704266503
+  diff:
+    tam: fixed
+    ckpt: checkpoints/dw_v8a_mix20/policy_final.pt
+  ppo:
+    num_envs: 8
+    policy: checkpoints/exported/policy.pt
+    # NOTE (paper): PPO trained WITH DORAEMON DR — it has seen perturbations in training.
+    # Disclose this asymmetry when interpreting E2 (docs/experiments/competitor_framework_plan review).
+
+seeds: [0, 1, 2]
