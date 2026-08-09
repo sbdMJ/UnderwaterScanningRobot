@@ -24,6 +24,12 @@ conditions:
   # This is the condition that most honestly represents the real vehicle.
   measured_aruco:
     sensors: hw2026bag_aruco
+    ukfm_theta: false   # pre-s-fix estimator baseline (fix landed 2026-08-09); keep reproducible
+  # Same sensors, with the estimator actually USING the fix's absolute bearing to correct the
+  # arc-length state (wall_frame_ekf.update_ukfm s_meas channel) — the s-drift fix.
+  measured_aruco_sfix:
+    sensors: hw2026bag_aruco
+    ukfm_theta: true
 
 methods:
   nominal:

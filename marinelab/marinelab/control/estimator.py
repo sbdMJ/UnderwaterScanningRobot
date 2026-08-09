@@ -22,6 +22,10 @@ import numpy as np
 from .types import VehicleState
 
 
+def _wrap_angle(a: float) -> float:
+    return math.atan2(math.sin(a), math.cos(a))
+
+
 def _quat_from_euler_xyz(roll: float, pitch: float, yaw: float) -> np.ndarray:
     """(w, x, y, z) from XYZ Euler angles — matches ``isaaclab.utils.math``."""
     cr, sr = math.cos(roll * 0.5), math.sin(roll * 0.5)
@@ -49,7 +53,10 @@ class SensorSample:
     v_bz: float = 0.0  # DVL heave velocity (unused by the EKF, passed through to the state)
     gyro_x: float = 0.0  # INS roll rate (passed through)
     gyro_y: float = 0.0  # INS pitch rate (passed through)
-    ukfm: tuple[float, float] | None = None  # (r, phi) surface-marker fix when visible
+    ukfm: tuple[float, float] | None = None  # (r, phi) or (r, phi, theta) marker fix when
+    #                                          visible; theta = absolute wall bearing of the
+    #                                          fix (atan2(y, x) in the tank frame), which is
+    #                                          what lets the EKF correct the arc-length state
     stamp: float = 0.0
 
 
@@ -89,8 +96,16 @@ class WallFrameStateEstimator:
     def step(self, sample: SensorSample, dt: float) -> VehicleState:
         if self._ekf is None:
             raise RuntimeError("call reset(r0=..., phi0=..., theta0=...) before step()")
+        # A 3-tuple fix carries the absolute bearing; resolve it into an arc-length
+        # pseudo-measurement against the CURRENT estimate (innovation-form unwrap, so laps
+        # never ambiguate it as long as the estimate is within half a circumference).
+        ukfm_s = None
+        if sample.ukfm is not None and len(sample.ukfm) >= 3:
+            R = self._ekf.cfg.tank_radius
+            ukfm_s = self._ekf.s + R * _wrap_angle(sample.ukfm[2] - self.theta_hat)
         self._ekf.step(v_bx=sample.v_bx, v_by=sample.v_by, gyro_z=sample.gyro_z, dt=dt,
-                       sonar=sample.sonar, ukfm=sample.ukfm)
+                       sonar=sample.sonar, ukfm=sample.ukfm[:2] if sample.ukfm else None,
+                       ukfm_s=ukfm_s)
         th = self.theta_hat
         yaw = th + self._ekf.phi
         r = self._ekf.r

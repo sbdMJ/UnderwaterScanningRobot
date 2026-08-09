@@ -297,3 +297,60 @@ def test_clearance_uses_the_vehicle_not_the_transducer():
     ekf = WallFrameEKF(WallFrameEKFCfg(initial=(4.5, 0.0, 0.0), sonar_mount_pos=MOUNT))
     assert ekf.clearance == pytest.approx(1.5)
     assert mounted_sonar_range(4.5, 0.0, R, MOUNT, 0.0) < ekf.clearance
+
+
+def test_ukfm_s_channel_bounds_the_dvl_integrator_drift():
+    """The failure e5_ekf measured: a DVL bias integrates into s unbounded when the fix only
+    corrects (r, phi); resolving the fix's absolute bearing into an s pseudo-measurement must
+    hold the drift near the fix accuracy. Synthetic tangential orbit, +5 cm/s sway bias."""
+    import math
+
+    from marinelab.tasks.pkrc_wallscan.wall_frame_ekf import (
+        WallFrameEKF, WallFrameEKFCfg, mounted_sonar_range)
+
+    def run(with_s_channel: bool) -> float:
+        cfg = WallFrameEKFCfg(initial=(4.5, 0.0, 0.0))
+        ekf = WallFrameEKF(cfg)
+        R, r_true, v_tan, bias = cfg.tank_radius, 4.5, 0.10, 0.05
+        dt, T = 0.02, 120.0
+        theta = 0.0
+        n = int(T / dt)
+        for i in range(n):
+            theta += (v_tan / r_true) * dt
+            s_true = R * theta
+            sonar = mounted_sonar_range(r_true, 0.0, R, cfg.sonar_mount_pos) \
+                if i % 5 == 0 else None                      # 9.5 Hz
+            ukfm = ukfm_s = None
+            if i % 38 == 0:                                  # ~1.3 Hz fix
+                ukfm = (r_true, 0.0)
+                if with_s_channel:
+                    theta_hat = ekf.s / R                    # theta0 = 0
+                    wrapped = math.atan2(math.sin(theta - theta_hat),
+                                         math.cos(theta - theta_hat))
+                    ukfm_s = ekf.s + R * wrapped
+            ekf.step(v_bx=0.0, v_by=v_tan + bias, gyro_z=v_tan / r_true, dt=dt,
+                     sonar=sonar, ukfm=ukfm, ukfm_s=ukfm_s)
+        return abs(ekf.s - R * theta)
+
+    drift_without = run(with_s_channel=False)
+    drift_with = run(with_s_channel=True)
+    # bias * T * (R/r) ~ 8 m of raw drift; (r,phi)-only correction cannot remove it
+    assert drift_without > 2.0, f"expected unbounded s drift, got {drift_without:.2f} m"
+    # MEASURED steady state ~0.31 m, flat from 60 s through 360 s — the equilibrium between
+    # this deliberately extreme 5 cm/s bias (5x the sim's dvl_bias_dr) and 1.3 Hz fixes at
+    # r_ukfm_s = 0.10 trust. The claim under test is boundedness, not the exact equilibrium.
+    assert drift_with < 0.5, f"s channel should bound drift near fix accuracy, got {drift_with:.2f} m"
+
+
+def test_ukfm_two_tuple_update_is_unchanged_by_the_s_channel():
+    """Backward compat: a (r, phi) fix must correct exactly as before the s channel existed."""
+    import numpy as np
+
+    from marinelab.tasks.pkrc_wallscan.wall_frame_ekf import WallFrameEKF, WallFrameEKFCfg
+
+    a = WallFrameEKF(WallFrameEKFCfg(initial=(4.4, 0.1, 1.0)))
+    b = WallFrameEKF(WallFrameEKFCfg(initial=(4.4, 0.1, 1.0)))
+    a.update_ukfm(4.5, 0.0)
+    b.update_ukfm(4.5, 0.0, None)
+    assert np.allclose(a.x, b.x) and np.allclose(a.P, b.P)
+    assert a.x[2] == 1.0, "a 2-tuple fix must not touch s"

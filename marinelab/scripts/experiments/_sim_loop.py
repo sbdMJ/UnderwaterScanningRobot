@@ -170,6 +170,10 @@ class SimSensorStream:
                                        if issubclass(scfg_cls, SensorCfgDatasheet) else 0.02))
         self.gate = SensorRateGate(self.scfg)
         self._held: dict = {}
+        # The marker fix knows its absolute bearing; emitting it lets the EKF correct the
+        # arc-length state (the one integrator nothing else corrects — see wall_frame_ekf.
+        # update_ukfm). False reproduces the pre-fix estimator (e5_ekf cells before 2026-08-09).
+        self.ukfm_theta = bool(opt.get("ukfm_theta", True))
         self.gyro_noise_std = gyro_noise(self.scfg)
         self.rng = np.random.default_rng(seed)
         self.tank_radius = cfg.tank_radius
@@ -226,8 +230,13 @@ class SimSensorStream:
 
         ukfm = None
         if bool(ukfm_in_range(pos[:, 2], s)[0]) and self.gate.fresh("ukfm", stamp):
+            # The fix also carries the absolute bearing theta; its error is the xy fix error
+            # seen at radius r (a 6.5 cm fix at r=4.5 m is ~1.4e-2 rad), not ukfm_noise itself.
             ukfm = (truth["r"] + float(rng.normal(0, s.ukfm_noise)),
                     truth["phi"] + float(rng.normal(0, s.ukfm_noise)))
+            if self.ukfm_theta:
+                theta_true = float(torch.atan2(pos[0, 1], pos[0, 0]))
+                ukfm += (theta_true + float(rng.normal(0, s.ukfm_noise / max(truth["r"], 1.0))),)
 
         sample = SensorSample(
             v_bx=float(v_meas[0]), v_by=float(v_meas[1]),
