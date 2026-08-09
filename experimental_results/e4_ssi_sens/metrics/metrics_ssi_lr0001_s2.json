@@ -1,0 +1,72 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.6665445566177368,
+  "tilt_sway_deg": 1.2264600992202759,
+  "tilt_deg": 0.7188149690628052,
+  "crab_deg": 1.7830759286880493,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.20005644128253283,
+  "sway_speed_mps": 0.09983532736746319,
+  "heave_path_speed_mps": 0.20005644128253283,
+  "sway_path_speed_mps": 0.09983532736746319,
+  "heave_legs_scored": 3,
+  "sway_legs_scored": 4,
+  "wall_dist_err_cm": 17.236410081386566,
+  "cycles_mean": 2.0,
+  "cycles_per_env": [
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e4_ssi_sens",
+  "method": "ssi",
+  "cond": "lr0001",
+  "seed": 2,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "gt",
+    "num_envs": 1,
+    "tam": "fixed",
+    "ssi_lr": 0.001,
+    "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 9.116859525429188,
+    "solve_ms_p95": 12.191121546493378,
+    "solve_ms_max": 140.7495769963134,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.02688888888888889
+  },
+  "score": {
+    "objective": 2564.8040712156107,
+    "collided": false,
+    "scored_losses": [
+      2564.8040712156107
+    ]
+  }
+}
