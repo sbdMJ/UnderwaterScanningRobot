@@ -27,6 +27,7 @@ from marinelab.experiments.aggregate import (  # noqa: E402
 )
 
 DEFAULT_F1_METRICS = ["score.objective", "cycles_mean", "wall_dist_err_cm", "crab_deg"]
+DEFAULT_F1_LOGY = ("score.objective",)
 
 
 def _summary(results_dir: str, metrics: list[str]):
@@ -90,7 +91,9 @@ def main() -> None:
     p.add_argument("--metric", default="score.objective", help="f3/f5 y-axis metric key")
     p.add_argument("--ylabel", default=None, help="f3/f5 y-axis label (default: metric key)")
     p.add_argument("--logy", action="store_true", default=False,
-                   help="f3: log y-scale (PPO's 8-env objective dwarfs the MPC methods)")
+                   help="f3/f5: log y-scale (PPO's 8-env objective dwarfs the MPC methods)")
+    p.add_argument("--logy-metrics", nargs="+", default=list(DEFAULT_F1_LOGY),
+                   help="f1: panels drawn with a log y-axis (default: score.objective)")
     p.add_argument("--cond", default=None, help="condition (f1/f2/f4/f5)")
     p.add_argument("--seed", type=int, default=0, help="trajectory seed (f2/f4)")
     p.add_argument("--t-event", type=float, default=None, help="f4 event marker [s]")
@@ -103,7 +106,8 @@ def main() -> None:
     structured = os.path.isdir(os.path.join(root, "metrics"))
     out = args.out or os.path.join(root, "figures" if structured else "", f"fig_{args.fig}")
     if args.fig == "f1":
-        paths = F.fig_overlay(_summary(root, args.metrics), args.metrics, out, cond=args.cond)
+        paths = F.fig_overlay(_summary(root, args.metrics), args.metrics, out, cond=args.cond,
+                              logy_metrics=tuple(args.logy_metrics))
     elif args.fig == "f2":
         cond = args.cond or "nominal"
         paths = F.fig_trajectory(_cases_f2(root, cond, args.seed), out)
@@ -119,7 +123,7 @@ def main() -> None:
         names = args.names or [os.path.basename(os.path.normpath(r)) for r in args.results]
         named = {name: _summary(r, [args.metric]) for name, r in zip(names, args.results)}
         paths = F.fig_zeroshot_ft(named, args.metric, out, cond=args.cond,
-                                  ylabel=args.ylabel)
+                                  ylabel=args.ylabel, logy=args.logy)
     elif args.fig == "f6":
         offline = collect_budgets(args.tuning) if args.tuning else {}
         # budget dirs are named by tuning method (bo_nmpc/ssi_mpc) -> map to method keys

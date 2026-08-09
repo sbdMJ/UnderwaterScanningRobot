@@ -101,7 +101,11 @@ def _smooth(x: np.ndarray, window: int) -> np.ndarray:
 
 
 def fig_overlay(summary: dict, metrics: list[str], out: str, *, cond: str | None = None,
-                labels: dict[str, str] | None = None) -> list[str]:
+                labels: dict[str, str] | None = None,
+                logy_metrics: tuple[str, ...] = ("score.objective",)) -> list[str]:
+    """``logy_metrics``: panels drawn with a log y-axis. Default covers score.objective —
+    PPO's 8-env-summed objective (~3e5) flattens the 1-env MPC methods (~1e3) on a linear
+    axis into indistinguishable zero-height marks."""
     labels = labels or {}
     conds = sorted({c for (_m, c) in summary})
     cond = cond if cond is not None else conds[0]
@@ -121,6 +125,8 @@ def fig_overlay(summary: dict, metrics: list[str], out: str, *, cond: str | None
             if values:
                 ax.scatter(i + rng.uniform(-0.14, 0.14, len(values)), values, s=9,
                            color="0.25", alpha=0.65, zorder=2, linewidths=0)
+        if metric in logy_metrics:
+            ax.set_yscale("log")
         ax.set_xticks(range(len(methods)))
         ax.set_xticklabels([_label(m) for m in methods], rotation=35, ha="right", fontsize=8)
         ax.set_title(labels.get(metric, metric))
@@ -252,7 +258,8 @@ _GROUP_FACE = ["#FFFFFF", "0.55"]  # zero-shot: hollow; fine-tuned: filled gray
 
 
 def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
-                    cond: str | None = None, ylabel: str | None = None) -> list[str]:
+                    cond: str | None = None, ylabel: str | None = None,
+                    logy: bool = False) -> list[str]:
     methods = sorted({m for s in named_summaries.values() for (m, _c) in s}, key=_method_key)
     width = 0.8 / len(named_summaries)
     fig, ax = plt.subplots(figsize=(0.95 * len(methods) + 1.6, 2.8))
@@ -265,7 +272,9 @@ def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
                 continue
             stat = summary[key][metric]
             x = i + (k - (len(named_summaries) - 1) / 2) * width
-            mean = stat["mean"] if np.isfinite(stat["mean"]) else 0.0
+            if not np.isfinite(stat["mean"]):
+                continue  # a zero-height stand-in bar is unreadable on a log axis
+            mean = stat["mean"]
             ax.bar(x, mean, width=width * 0.88, yerr=stat["sd"], capsize=3,
                    facecolor=_GROUP_FACE[k % len(_GROUP_FACE)], edgecolor=_color(m),
                    linewidth=1.3, zorder=2,
@@ -273,6 +282,8 @@ def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
             values = [v for v in stat["values"] if np.isfinite(v)]
             ax.scatter(x + rng.uniform(-width / 4, width / 4, len(values)), values, s=9,
                        color="0.2", alpha=0.7, zorder=3, linewidths=0)
+    if logy:
+        ax.set_yscale("log")
     ax.set_xticks(range(len(methods)))
     ax.set_xticklabels([_label(m) for m in methods], rotation=20, ha="right", fontsize=8)
     ax.set_ylabel(ylabel or metric)
@@ -489,6 +500,11 @@ def fig_cost(offline: dict[str, dict], summary: dict, out: str, *,
     ax2.bar(xs, inf_means, width=0.62, yerr=inf_sds, capsize=3, color=colors,
             edgecolor="black", linewidth=0.6)
     ax2.set_ylabel("Computation time [ms]")
+    # PPO's 0.04 ms forward pass vs ~8 ms MPC solves: invisible on a linear axis —
+    # same >50x auto-log rule as the offline panel.
+    positive_ms = [v for v in inf_means if v > 0]
+    if positive_ms and max(positive_ms) / min(positive_ms) > 50:
+        ax2.set_yscale("log")
     for ax in (ax1, ax2):
         ax.set_xticks(xs)
         ax.set_xticklabels([_label(m) for m in methods], rotation=20, ha="right", fontsize=8)
