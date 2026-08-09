@@ -36,6 +36,6 @@ methods:
     num_envs: 8
     policy: checkpoints/exported/policy.pt
     # NOTE (paper): PPO trained WITH DORAEMON DR — it has seen perturbations in training.
-    # Disclose this asymmetry when interpreting E2 (docs/competitor_framework_plan review).
+    # Disclose this asymmetry when interpreting E2 (docs/experiments/competitor_framework_plan review).
 
 seeds: [0, 1, 2]
