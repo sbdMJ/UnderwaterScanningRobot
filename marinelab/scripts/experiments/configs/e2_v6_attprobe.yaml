@@ -1,0 +1,23 @@
+# V1 look-ahead candidate probe: the baseline's failure axis (seed 2 under DR — 9,001 /
+# 14,493 / COLLIDED at dr25/50/75) plus the E1 s0 sanity cell. Journey doc §3.
+exp: e2_v6_attprobe
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  dr25: {dr_fluid_scale: 0.25}
+  dr50: {dr_fluid_scale: 0.50}
+  dr75: {dr_fluid_scale: 0.75}
+  nominal: {task: Isaac-PKRC-WallScan-Stage3-Direct-v0}
+
+methods:
+  diff:
+    tam: fixed
+    ckpt: checkpoints/dw_v6_att/policy_final.pt
+
+seeds: [2]

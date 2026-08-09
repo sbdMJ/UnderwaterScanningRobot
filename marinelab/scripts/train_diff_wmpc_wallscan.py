@@ -66,6 +66,18 @@ parser.add_argument("--lr", type=float, default=5e-4)
 parser.add_argument("--batch_size", type=int, default=10)
 parser.add_argument("--grad_clip", type=float, default=0.1)
 parser.add_argument("--history_len", type=int, default=4)
+parser.add_argument("--attitude_range", type=float, default=0.09,
+                    help="V6: max |roll|,|pitch| at segment start [rad]. Default keeps the "
+                         "original mild 0.09 (solver-interior by design). The E2/Eval stress "
+                         "draws start at up to ~0.8 rad; V5 probes showed dynamics DR alone "
+                         "does not fix the dr75/s2 collision (start tilt 40 deg = attitude "
+                         "itself is OOD). Values > 0.09 are drawn as a 50/50 mix of mild and "
+                         "U(0.09, r) segments so easy-regime sample efficiency survives.")
+parser.add_argument("--attitude_extreme_frac", type=float, default=0.5,
+                    help="Fraction of segments drawn from the widened attitude range "
+                         "(the rest stay mild 0.09). V6/V7 at 0.5 fixed the stress axis "
+                         "but regressed the nominal s2 cell 1.7-4x — the mix starves "
+                         "precision-tracking practice. Lower = more nominal-friendly.")
 parser.add_argument("--dr_fluid", type=float, default=0.0,
                     help="V5: per-segment fluid-coefficient DR half-range (added mass, "
                          "linear/quadratic damping scaled by U(1-r, 1+r) each segment; the "
@@ -204,7 +216,10 @@ def main() -> None:
         # Yaw within the envelope where the solve stays interior: a huge initial heading
         # error just produces saturated steps, which the learner discards anyway.
         yaw = th + float(rng.uniform(-0.7, 0.7))
-        roll, pitch = (float(rng.uniform(-0.09, 0.09)) for _ in range(2))
+        r_att = 0.09
+        if args_cli.attitude_range > 0.09 and rng.uniform() < args_cli.attitude_extreme_frac:
+            r_att = float(rng.uniform(0.09, args_cli.attitude_range))
+        roll, pitch = (float(rng.uniform(-r_att, r_att)) for _ in range(2))
         phase = int(rng.integers(0, 4))
 
         root = env._robot.data.default_root_state.clone()
