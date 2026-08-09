@@ -54,10 +54,55 @@ EKF-in-loop 재검증(Phase B) 전에 SimSensorStream에 **rate-and-hold 모델*
 
 ## 4. 다음 액션
 
-- [ ] **(로봇 측 요청)** ArUco 마커가 실제로 보이는 상태의 bag 1개
-      (`/ukfm/odom_validated`가 발행되는 구간 포함, 가능하면 스캔 심도까지 잠항 포함,
-      2–3 분) — UKFM 절대 정확도·보정 점프·가시성 비율 특성화용. Phase B의
-      상태소스 결정(wall_frame_ekf vs UKFM 직접)이 이것에 걸려 있다.
-- [ ] SimSensorStream rate-and-hold 모델 + 실측 노이즈 SensorCfg 추가 → e5_ekf 재실행
+- [x] **(로봇 측 요청)** ArUco 마커가 보이는 bag → §5 (20260806_122531)
+- [x] SimSensorStream rate-and-hold 모델 + 실측 노이즈 SensorCfg 추가 → e5_ekf 재실행
+      (`SensorCfgHW2026Bag`/`SensorCfgHW2026BagAruco`, 커밋 bd47e68)
 - [ ] bag 리플레이로 wall_frame_ekf 오프라인 검증 (nmpc-wallscan 브랜치의 EKF replay
       진입점 이식)
+
+## 5. 마커 가시 bag (20260806_122531) — UKFM 절대 보정 특성화
+
+48.5 s, 수심 0.59–3.81 m. `/aruco/pose_6dof` 37건, `/ukfm/odom_validated` 893건
+(t=16.5 s부터 연속 발행, odom 틱 커버리지 64%). 분석:
+`marinelab/scripts/experiments/hw_bag_aruco_analyze.py`.
+
+| 항목 | 실측값 |
+|---|---|
+| ArUco fix 주기 | **~1.3 Hz** (간격 중앙값 0.51 s, p90 1.24 s, 최대 2.48 s) |
+| fix 시점 혁신 \|odom−aruco\| | **중앙값 6.5 cm**, p90 10.8 cm, 최대 21.4 cm |
+| 보정 점프 (odom 스텝) | 0.02 cm — 노드의 low-pass가 흡수, 점프 모델 불필요 |
+| 마커 가시 심도 | 3.81 m에서도 유지 (스캔 심도 전 구간은 실험 수조에서 확인 필요) |
+
+시사점: **절대 정보는 odom의 31.5 Hz가 아니라 ArUco의 1.3 Hz로 들어온다.** 시뮬의
+UKFM 채널은 이 케이던스와 fix 정확도로 모델링해야 한다 → `SensorCfgHW2026BagAruco`
+(`ukfm_period` 0.77 s, `ukfm_noise` 0.065).
+
+## 6. e5_ekf 재판정 결과와 근본 원인 (2026-08-09)
+
+| 조건 (ssi/nominal 5-시드 평균) | ssi | nominal |
+|---|--:|--:|
+| GT (E1) | 697 | 969 |
+| placeholder-EKF | 4,989 | 5,284 |
+| measured (실측 노이즈+주기, UKFM 31.5 Hz) | 5,105 | 5,039 |
+| measured_aruco (UKFM 1.3 Hz, s-보정 없음) | 5,699 | 5,206 |
+| **measured_aruco_sfix (s-보정)** | **761 (1.09×GT)** | **999 (1.03×GT)** |
+
+실측 센서 모델은 φ RMSE를 1.4–2.4°→0.4–0.6°로 잡았지만 objective는 그대로 —
+**ŝ가 유일한 미보정 적분기**이기 때문이다 (`wall_frame_ekf.update_ukfm`의 H에 s행이
+없어, 절대 fix가 알고 있는 방위각 θ를 버리고 있었다). 나쁜 시드의 DVL 바이어스 추첨이
+ŝ에 무한 적분되어 67–112 cm RMSE → 스캔 레퍼런스 자체가 틀어져 어느 컨트롤러도 못
+버틴다 (공통 모드 5–7×).
+
+수정: fix 방위각에서 s 의사측정을 파생해 EKF에 추가 (`update_ukfm(s_meas)`,
+`estimator.py`의 innovation-form unwrap). 합성 검증: 5 cm/s DVL 바이어스에서 s 오차
+8 m 발산 → **0.31 m 유계** (60–360 s 평평).
+
+**sim 재판정 (`measured_aruco_sfix`, 2026-08-09): red-flag 해제.** ŝ RMSE 전 시드
+2.6–6.0 cm (수정 전 67–112 cm), 충돌 0, 순위 보존 (ssi 761 < nominal 999 — GT의
+697 < 969와 동일 방향). EKF-in-loop 비용이 GT 대비 +3~9%로, 실측 UKFM 케이던스
+(1.3 Hz) 하에서 하드웨어 진입 게이트를 통과한다. 개별 시드 최대치는 ssi s0의 6.0×
+(18→109)이나 절대값이 작아 시드 분산 범위 안이다.
+
+남는 하드웨어 전제 두 가지: ① 실기체 UKFM/ArUco 체인이 fix의 절대 방위각(θ)을
+estimator에 전달할 것 (`SensorSample.ukfm` 3-튜플), ② 마커 가시성이 스캔 심도
+전 구간에서 122531 bag(≤3.8 m)과 동급일 것 — 실험 수조에서 확인 필요.
