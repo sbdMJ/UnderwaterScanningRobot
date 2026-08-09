@@ -235,3 +235,55 @@ def test_apply_sensors_uses_the_split_noise_channels():
     out = apply_sensors(gt, cfg, torch.Generator().manual_seed(0))
     assert float(out["up_vec"][:, 0].std()) < 1e-3, "attitude must use ins_att_noise"
     assert 0.15 < float(out["ang_vel"][:, 0].std()) < 0.25, "rate must use ins_gyro_noise"
+
+
+def test_rate_gate_fresh_pattern_matches_the_measured_sensor_rates():
+    """A 50 Hz loop over the 9.5 Hz DVL must see roughly every fifth tick fresh."""
+    from marinelab.tasks.pkrc_wallscan.sensors import SensorCfgHW2026Bag, SensorRateGate
+
+    gate = SensorRateGate(SensorCfgHW2026Bag())
+    dt = 0.02
+    fresh = [gate.fresh("dvl", i * dt) for i in range(500)]
+    n = sum(fresh)
+    assert fresh[0], "first tick must always be fresh"
+    assert 83 <= n <= 96, f"9.5 Hz over 10 s should give ~95 fresh ticks, got {n}"
+    # consecutive fresh ticks are impossible at a 0.105 s period on a 0.02 s loop
+    assert not any(a and b for a, b in zip(fresh, fresh[1:]))
+
+
+def test_rate_gate_period_zero_is_always_fresh_and_reset_relatches():
+    """Legacy behaviour (period 0) must be untouched, and reset() must re-arm the gate."""
+    from marinelab.tasks.pkrc_wallscan.sensors import SensorCfg, SensorCfgHW2026Bag, SensorRateGate
+
+    legacy = SensorRateGate(SensorCfg())  # all periods default 0.0
+    assert all(legacy.fresh(n, i * 0.02) for n in SensorRateGate.NAMES for i in range(10))
+
+    gate = SensorRateGate(SensorCfgHW2026Bag())
+    assert gate.fresh("depth", 0.0) and not gate.fresh("depth", 0.02)
+    gate.reset()
+    assert gate.fresh("depth", 0.02), "after reset the next tick is fresh again"
+
+
+def test_hw2026bag_keeps_what_the_bag_could_not_characterize():
+    """UKF-M accuracy and per-run biases were NOT measurable from the dead-reckoning bag."""
+    from marinelab.tasks.pkrc_wallscan.sensors import SensorCfgDatasheet, SensorCfgHW2026Bag
+
+    ds, hw = SensorCfgDatasheet(), SensorCfgHW2026Bag()
+    for field in ("ukfm_noise", "ukfm_valid_max_depth", "sonar_bias_dr",
+                  "ins_att_bias_dr", "ins_gyro_bias_dr"):
+        assert getattr(hw, field) == getattr(ds, field), field
+    # and the measured channels must actually differ from the placeholders
+    assert hw.dvl_noise == 0.004 and hw.depth_noise == 0.0042
+    assert hw.dvl_period == 0.105 and hw.depth_period == 0.200 and hw.ukfm_period == 0.032
+
+
+def test_hw2026bag_aruco_models_the_fix_cadence_not_the_odom_stream():
+    """Absolute info arrives at the measured ~1.3 Hz ArUco rate with fix-time accuracy."""
+    from marinelab.tasks.pkrc_wallscan.sensors import SensorCfgHW2026Bag, SensorCfgHW2026BagAruco
+
+    hw, ar = SensorCfgHW2026Bag(), SensorCfgHW2026BagAruco()
+    assert ar.ukfm_period == 0.77 and ar.ukfm_noise == 0.065
+    # everything else stays the 122731-bag measurement
+    for field in ("dvl_noise", "depth_noise", "sonar_noise",
+                  "dvl_period", "depth_period", "sonar_period"):
+        assert getattr(ar, field) == getattr(hw, field), field

@@ -14,6 +14,16 @@ defaults:
 
 conditions:
   nominal: {}
+  # Measured sensor model from the 2026-08-06 hero_ws bag: real noise floors AND real update
+  # rates (DVL 9.5 Hz, depth 5 Hz, wall 9.5 Hz, UKF-M 31.5 Hz) via SimSensorStream
+  # rate-and-hold. See docs/experiments/hw_sensor_characterization.md.
+  measured:
+    sensors: hw2026bag
+  # As above, plus the UKF-M absolute channel measured from the marker-visible 122531 bag:
+  # ArUco fixes at ~1.3 Hz with 6.5 cm median innovation (NOT the 31.5 Hz odom stream).
+  # This is the condition that most honestly represents the real vehicle.
+  measured_aruco:
+    sensors: hw2026bag_aruco
 
 methods:
   nominal:

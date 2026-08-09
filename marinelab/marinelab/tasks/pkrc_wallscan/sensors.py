@@ -82,6 +82,16 @@ class SensorCfg:
     ins_att_noise: float | None = None    # rad,   attitude channels only
     ins_gyro_noise: float | None = None   # rad/s, angular-rate channel only
     ins_heading_bias_dr: float | None = None  # rad, heading only (roll/pitch keep ins_att_bias_dr)
+    # --- update periods (2026-08-09) ----------------------------------------------------
+    # Real sensors do not refresh at the 50 Hz control rate; the estimator condition was
+    # measurably flattered by assuming they do (fresh corrections every step). Period in
+    # seconds between new readings; 0.0 = a fresh reading every control step, which is the
+    # legacy behaviour and stays the default everywhere. Between updates a consumer holds the
+    # last value (DVL/depth: prediction inputs) or skips the correction (sonar/UKF-M).
+    sonar_period: float = 0.0
+    dvl_period: float = 0.0
+    depth_period: float = 0.0
+    ukfm_period: float = 0.0
 
 
 def att_noise(cfg: SensorCfg) -> float:
@@ -177,6 +187,87 @@ class SensorCfgDatasheet(SensorCfg):
     # error), not a noise/bias split. The accuracy figure is assigned to the bias term because a
     # slowly-varying error is the conservative reading for a controller — a bias never averages
     # out — leaving the noise small. Replace if a real Allan-variance attitude figure turns up.
+
+
+@dataclass
+class SensorCfgHW2026Bag(SensorCfgDatasheet):
+    """Sensor model measured from the robot itself: the 2026-08-06 hero_ws teleop rosbag.
+
+    Source: ``docs/experiments/hw_sensor_characterization.md`` (34 s bag, depth 0.6-0.7 m,
+    analysed by ``marinelab/scripts/experiments/hw_bag_characterize.py``). Noise figures are
+    std(diff)/sqrt(2) over the moving robot, i.e. honest UPPER bounds; every one still came in
+    ~5x below the placeholder guesses. What the bag could NOT characterize keeps the parent
+    (datasheet/placeholder) value:
+
+    * ``ukfm_noise`` / ``ukfm_bias_dr`` — the bag's /ukfm/odom was pure dead reckoning
+      (0 ArUco messages, /ukfm/odom_validated never published), so its 0.5 mm "noise" is
+      filter smoothness, not absolute accuracy. Placeholder 0.03 stays until a marker-visible
+      bag exists.
+    * gyro — measured 1.6-2.1 mrad/s bounds it, but includes real rotation; the 3DM-GV7
+      datasheet figure (parent) is finer and consistent with the bound.
+    * biases — a 34 s bag cannot see per-run constants; parent values stay.
+
+    The load-bearing change is the PERIODS: DVL 9.5 Hz, depth 5.0 Hz, wall range 9.5 Hz,
+    UKF-M 31.5 Hz against the sim's fresh-sample-every-step (50 Hz) legacy assumption.
+    """
+
+    # measured hf-noise (upper bounds, moving robot)
+    sonar_noise: float = 0.034     # /ukfm/wall_distance; sim treats it as the wall-range channel
+    depth_noise: float = 0.0042    # /bar10xt/depth
+    dvl_noise: float = 0.004       # /dvl/data velocity xy
+    # measured update periods (median rates over the bag)
+    sonar_period: float = 0.105    # 9.5 Hz
+    dvl_period: float = 0.105      # 9.5 Hz
+    depth_period: float = 0.200    # 5.0 Hz
+    ukfm_period: float = 0.032     # 31.5 Hz
+
+
+@dataclass
+class SensorCfgHW2026BagAruco(SensorCfgHW2026Bag):
+    """HW2026Bag with the UKF-M channel corrected to the MARKER-VISIBLE bag (20260806_122531).
+
+    The 122731 bag had zero ArUco fixes, so HW2026Bag inherited the placeholder UKF-M. The
+    122531 bag (46 s, depth 0.6-3.8 m, marker visible from t=16.5 s) measured the absolute
+    channel itself: /ukfm/odom publishes at 31.5 Hz, but that is filter output — absolute
+    information (ArUco fixes) arrives at ~1.3 Hz (median gap 0.51 s, max 2.48 s), and the
+    innovation |odom - aruco| at fix time is 6.5 cm median / 10.8 cm p90. The sim's ukfm
+    update models exactly such an absolute fix, so it gets the fix cadence and the fix-time
+    error, not the odom stream's smoothness. Correction jumps are absorbed by the node's
+    low-pass (measured step 0.02 cm), so a jump model is not needed.
+    """
+
+    ukfm_noise: float = 0.065   # m/rad; median innovation at fix times (122531 bag)
+    ukfm_period: float = 0.77   # s; measured ArUco fix rate ~1.3 Hz
+
+
+class SensorRateGate:
+    """Tracks which sensors have a FRESH reading at a given time — pure, no torch state.
+
+    ``fresh(name, t)`` returns True when ``cfg.<name>_period`` has elapsed since the last
+    fresh tick (and latches ``t``), so a 50 Hz loop over a 9.5 Hz sensor sees roughly every
+    fifth tick fresh. Period 0.0 = always fresh (legacy). Consumers decide what "not fresh"
+    means for each channel: hold the last value (prediction inputs like DVL velocity, depth)
+    or skip the measurement update (sonar, UKF-M) so one reading never corrects twice.
+    """
+
+    NAMES = ("sonar", "dvl", "depth", "ukfm")
+
+    def __init__(self, cfg: SensorCfg, t0: float = 0.0):
+        self._period = {n: float(getattr(cfg, f"{n}_period", 0.0)) for n in self.NAMES}
+        self._last = {n: None for n in self.NAMES}
+        self._t0 = t0
+
+    def reset(self, t0: float = 0.0) -> None:
+        self._last = {n: None for n in self.NAMES}
+        self._t0 = t0
+
+    def fresh(self, name: str, t: float) -> bool:
+        period = self._period[name]
+        last = self._last[name]
+        if period <= 0.0 or last is None or (t - last) >= period - 1e-9:
+            self._last[name] = t
+            return True
+        return False
 
 
 def _randn(shape, std: float, gen: torch.Generator | None, dtype, device) -> torch.Tensor:

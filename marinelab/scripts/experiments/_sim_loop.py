@@ -46,7 +46,8 @@ from marinelab.tasks.pkrc_wallscan import eval_metrics as em
 from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref, scan_state_machine as ssm
 from marinelab.tasks.pkrc_wallscan.mpc_controller import PlantParams
 from marinelab.tasks.pkrc_wallscan.sensors import (
-    SensorCfg, SensorCfgDatasheet, _body_up, att_noise, gyro_noise, ukfm_in_range,
+    SensorCfg, SensorCfgDatasheet, SensorCfgHW2026Bag, SensorCfgHW2026BagAruco, SensorRateGate,
+    _body_up, att_noise, gyro_noise, ukfm_in_range,
 )
 from marinelab.tasks.pkrc_wallscan.wall_frame_ekf import WallFrameEKFCfg
 from marinelab.tasks.pkrc_wallscan.wallscan_env_cfg import (
@@ -148,21 +149,27 @@ def build_controller(cell: ExperimentCell, env, cfg):
 class SimSensorStream:
     """Synthesize SensorSample streams from GT — port of run_wallscan_mpc's --state ekf block."""
 
+    _SCFG = {"placeholder": SensorCfg, "datasheet": SensorCfgDatasheet,
+             "hw2026bag": SensorCfgHW2026Bag, "hw2026bag_aruco": SensorCfgHW2026BagAruco}
+
     def __init__(self, cfg, opt: dict, seed: int):
-        scfg_cls = SensorCfgDatasheet if opt.get("sensors", "placeholder") == "datasheet" else SensorCfg
+        scfg_cls = self._SCFG[opt.get("sensors", "placeholder")]
         self.scfg = scfg_cls(ukfm_gate=opt.get("ukfm_gate", "depth_below_surface"),
                              ukfm_surface_z=cfg.tank_height)
         # Bias half-ranges are DR knobs (0 in Stage3); the estimator condition needs them on.
-        if scfg_cls is SensorCfgDatasheet:
-            self.scfg.sonar_bias_dr = SensorCfgDatasheet.sonar_bias_dr
-            self.scfg.ins_att_bias_dr = SensorCfgDatasheet.ins_att_bias_dr
+        # A 34 s bag cannot see per-run constants, so hw2026bag keeps the datasheet biases.
+        if issubclass(scfg_cls, SensorCfgDatasheet):
+            self.scfg.sonar_bias_dr = scfg_cls.sonar_bias_dr
+            self.scfg.ins_att_bias_dr = scfg_cls.ins_att_bias_dr
         else:
             self.scfg.sonar_bias_dr = 0.10
             self.scfg.ins_att_bias_dr = 0.04
         self.scfg.depth_bias_dr = 0.10
         self.scfg.dvl_bias_dr = 0.01
         self.gyro_bias = float(opt.get("gyro_bias", self.scfg.ins_gyro_bias_dr
-                                       if scfg_cls is SensorCfgDatasheet else 0.02))
+                                       if issubclass(scfg_cls, SensorCfgDatasheet) else 0.02))
+        self.gate = SensorRateGate(self.scfg)
+        self._held: dict = {}
         self.gyro_noise_std = gyro_noise(self.scfg)
         self.rng = np.random.default_rng(seed)
         self.tank_radius = cfg.tank_radius
@@ -170,6 +177,8 @@ class SimSensorStream:
         self.redraw_bias()
 
     def redraw_bias(self) -> None:
+        self.gate.reset()
+        self._held.clear()
         s, rng = self.scfg, self.rng
         self.bias = {
             "sonar": float(rng.uniform(-s.sonar_bias_dr, s.sonar_bias_dr)) if s.sonar_bias_dr else 0.0,
@@ -196,19 +205,38 @@ class SimSensorStream:
             pos[:, :2], yaw, env._sonar_mount_nom, env._sonar_yaw_nom, self.tank_radius)[0])
         v_b = env._robot.data.root_lin_vel_b[0]
         w_b = env._robot.data.root_ang_vel_b[0]
-        v_meas = v_b[:2].cpu().numpy() + rng.normal(0, s.dvl_noise, 2) + self.bias["dvl"]
+
+        # Rate-and-hold (docs/experiments/hw_sensor_characterization.md §2): a real DVL/depth
+        # reading persists until the sensor produces a new one, so prediction inputs HOLD;
+        # sonar/UKF-M are measurement updates, so between fresh readings they are absent
+        # (None) rather than re-applied — one echo must not correct the filter five times.
+        if self.gate.fresh("dvl", stamp) or "dvl" not in self._held:
+            self._held["dvl"] = (v_b[:2].cpu().numpy() + rng.normal(0, s.dvl_noise, 2)
+                                 + self.bias["dvl"], float(v_b[2]))
+        v_meas, v_bz = self._held["dvl"]
+
+        if self.gate.fresh("depth", stamp) or "depth" not in self._held:
+            self._held["depth"] = (float(pos[0, 2]) + float(rng.normal(0, s.depth_noise))
+                                   + self.bias["depth"])
+        depth = self._held["depth"]
+
+        sonar = None
+        if self.gate.fresh("sonar", stamp):
+            sonar = sonar_true + float(rng.normal(0, s.sonar_noise)) + self.bias["sonar"]
+
         ukfm = None
-        if bool(ukfm_in_range(pos[:, 2], s)[0]):
+        if bool(ukfm_in_range(pos[:, 2], s)[0]) and self.gate.fresh("ukfm", stamp):
             ukfm = (truth["r"] + float(rng.normal(0, s.ukfm_noise)),
                     truth["phi"] + float(rng.normal(0, s.ukfm_noise)))
+
         sample = SensorSample(
             v_bx=float(v_meas[0]), v_by=float(v_meas[1]),
             gyro_z=float(w_b[2]) + float(rng.normal(0, self.gyro_noise_std)) + self.gyro_bias,
-            sonar=sonar_true + float(rng.normal(0, s.sonar_noise)) + self.bias["sonar"],
-            depth=float(pos[0, 2]) + float(rng.normal(0, s.depth_noise)) + self.bias["depth"],
+            sonar=sonar,
+            depth=depth,
             roll=float(roll_t[0]) + float(rng.normal(0, att_noise(s))) + self.bias["att"][0],
             pitch=float(pitch_t[0]) + float(rng.normal(0, att_noise(s))) + self.bias["att"][1],
-            v_bz=float(v_b[2]), gyro_x=float(w_b[0]), gyro_y=float(w_b[1]),
+            v_bz=v_bz, gyro_x=float(w_b[0]), gyro_y=float(w_b[1]),
             ukfm=ukfm, stamp=stamp,
         )
         return sample, truth

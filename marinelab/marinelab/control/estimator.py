@@ -39,11 +39,11 @@ def _quat_from_euler_xyz(roll: float, pitch: float, yaw: float) -> np.ndarray:
 class SensorSample:
     """One control tick's raw sensor readings, body-frame where applicable."""
 
-    v_bx: float  # DVL surge velocity
+    v_bx: float  # DVL surge velocity (hold the last reading between DVL updates)
     v_by: float  # DVL sway velocity
     gyro_z: float  # INS yaw rate
-    sonar: float  # Ping1D wall range
-    depth: float  # pressure depth (tank z)
+    sonar: float | None  # Ping1D wall range; None = no new return this tick (update skipped)
+    depth: float  # pressure depth (tank z; hold the last reading between updates)
     roll: float  # INS attitude
     pitch: float  # INS attitude
     v_bz: float = 0.0  # DVL heave velocity (unused by the EKF, passed through to the state)
