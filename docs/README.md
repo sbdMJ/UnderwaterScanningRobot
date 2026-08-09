@@ -14,7 +14,7 @@
 | ④ | `docs/experiments/tuning_history/experiment_work_directives.md` | **실행 지침** — 분기 규칙, red-flag 규칙, 오염 사례 |
 | ⑤ | `docs/experiments/tuning_history/bo_tuning_history.md` / `docs/experiments/tuning_history/ssi_tuning_history.md` | 튜닝 여정 (논문 실험 섹션 소스) |
 | ⑥ | `docs/experiments/validation_report.md` | 결과 타당성 검증 (문헌 패턴 P1–P6 대조) |
-| ⑦ | `docs/diff_wmpc_port_todo.md` | **다음 작업** — diff 이식→실험 완료 단계별 TODO |
+| ⑦ | `docs/advanced_experiments_todo.md` | **다음 작업** — 후속 실험 계획 (조류 fine-tune, 속도 축, EKF 게이트) |
 | ⑧ | `docs/research/domain_comparison.md` / `docs/research/diffwmpc_domain_adaptations.md` | 부모 논문 대비 도메인·방법 대조 + 향후 concern (C-1~C-9) |
 | 참조 | `marinelab/scripts/experiments/README.md`, `docker/README.md`, `CLAUDE.md` | 러너 사용법 / 호스트 런타임 / 세션 규칙 |
 
@@ -58,8 +58,7 @@
 ## 3. 남은 작업 (우선순위 순)
 
 1. **diff-WMPC 이식 + E1/E2/E3 diff (20셀)** — 타 머신 모델 확정 대기.
-   절차 전체는 `docs/diff_wmpc_port_todo.md` (Phase 0–9). 여기의 게이트 기준치 표가
-   red-flag 판정 기준.
+   diff 이식 절차(port_todo)는 캠페인 완료로 폐기 — 후속 계획은 `docs/advanced_experiments_todo.md`.
 2. **E2(b) 온라인 fine-tune** (`finetune_diff_wmpc.py` 신설) → **F5**
 3. **E4(a) ablation** (`e4_ablation.yaml` 신설; 학습 변형 필요 축은 타 머신과 협의)
 4. E4(c) Jetson 추론 벤치 (`bench_inference.py`, isaaclab 무의존 — Jetson에서 실행)
