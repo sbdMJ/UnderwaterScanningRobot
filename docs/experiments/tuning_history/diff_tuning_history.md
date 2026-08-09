@@ -230,7 +230,26 @@ wallscan에는 "다른 트랙" 축이 없으므로 전이 축은 동역학 불�
 (environment-specific 기준선). 판정: ②가 ③에 근접하면 부모 논문의 "quick online
 fine-tuning" 주장이 우리 도메인에서 재현되는 것.
 
-(결과는 완료 후 추가)
+**결과 (2026-08-09, 27셀 완료)** — objective 평균 (seeds 0–2):
+
+| 플랜트 | zero-shot | fine-tuned (10k) | from-scratch (60k) |
+|---|--:|--:|--:|
+| heavy (×1.5) | **1,191** | 1,209 | 1,205 |
+| light (×0.5) | **640** | 654 | 663 |
+| asym (1.5/0.7/0.7) | **812** | 850 | 816 |
+
+**판정: 세 arm이 전 플랜트에서 통계적 동률 (zero-shot 근소 우위).** from-scratch
+기준선이 있으므로 이제 해석이 방어 가능하다 — fine-tune이 실패한 것이 아니라
+**environment-specific 성능의 상한 자체가 zero-shot 수준**이다. 도메인 해석:
+저속(0.2 m/s) wallscan에서 최적 가중치 스케줄은 플랜트 계수보다 상황(phase·자세)에
+지배되고, 폐루프 MPC가 준정적 계수 변화를 흡수한다. 핸들링 한계에서 주행하며
+플랜트가 성능을 결정하는 레이싱(부모 논문 — fine-tune으로 27 s 만에 from-scratch에
+도달)과의 정직한 차이로 논문에 서술할 것: **"우리 도메인에서는 zero-shot이 이미
+environment-specific 수준이라 온라인 fine-tuning이 불필요하다"** (F5′ 3종:
+`e2c_zs/figures/fig_f5_{heavy,light,asym}`).
+
+운영 기록: 이 라운드에서 학습 3종+평가 2워커 동시 실행이 GPU OOM(12 GB 초과)으로
+zs/ft 워커를 죽였음 — 동시 컨테이너 상한 4가 실측 한계 (남은 셀만 재실행으로 복구).
 
 ## 8. E4(a) ablation — Table 2 (2026-08-09)
 
