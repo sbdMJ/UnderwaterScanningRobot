@@ -97,6 +97,13 @@ def build_env(cell: ExperimentCell):
         cfg.hydrodynamics = PKRCHydrodynamicsCfg()
     if "dr_fluid_scale" in opt:  # E2 sweep: rescale the fluid-coefficient DR half-range
         apply_fluid_dr_scale(cfg, float(opt["dr_fluid_scale"]))
+    if "speed_scale" in opt:
+        # Plan-B speed axis: scale the scan ramp rates. ref_step feeds BOTH the env state
+        # machine and make_mpc_cfg's reference speeds, and eval_metrics derives its speed
+        # targets from the same fields — one knob keeps all three consistent.
+        s = float(opt["speed_scale"])
+        cfg.scan.ref_step *= s
+        cfg.scan.ref_step_s *= s
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 

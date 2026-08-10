@@ -6,7 +6,7 @@
 실행 계획이다. 실행 규칙은 CLAUDE.md(모니터링 cron·스팟체크 의무)와
 `docs/experiments/tuning_history/experiment_work_directives.md`(red-flag)를 따른다.
 
-## A. 조류 변화 환경 온라인 fine-tune (우선순위 1) — ★
+## A. 조류 변화 환경 온라인 fine-tune — ✅ 완료 (2026-08-10, diff_tuning_history §9.2)
 
 **질문**: 적응이 실제로 값을 하는 축(지속·방향성 외란)에서는 원논문의 "quick online
 fine-tuning" 서사가 복원되는가? (E2b′의 플랜트 시프트에서는 zero-shot이 상한이었음)
@@ -27,7 +27,7 @@ E3에서 적응 축임이 확인됨 (ssi가 nominal +39~44%; diff zero-shot 1,13
 - 예상 비용: 구현 ~1 h + 학습(ft 3×10 min, sc 3×50 min) + 평가 ~27셀 ≈ **반나절–1일**.
 - 충돌 검토: trainer·config·신규 결과 디렉토리만 — sim-to-real과 무충돌.
 
-## B. 속도 상향 실험 (우선순위 2, A와 병렬 가능)
+## B. 속도 상향 실험 — ✅ 1차 완료 (2026-08-10, §9.1: 단조 축 확보, diff 전 속도 선두; 2차 재최적화는 보류)
 
 **질문**: 스캔 속도를 올리면 (이차 항력 지배 시작) "상황-지배 → 플랜트-지배" 경계가
 어디서 나타나는가? — E2 평탄성(C-3)의 단조 축 대안 + "zero-shot 충분" 주장의

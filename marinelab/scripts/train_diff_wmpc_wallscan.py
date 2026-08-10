@@ -78,6 +78,12 @@ parser.add_argument("--attitude_extreme_frac", type=float, default=0.5,
                          "(the rest stay mild 0.09). V6/V7 at 0.5 fixed the stress axis "
                          "but regressed the nominal s2 cell 1.7-4x — the mix starves "
                          "precision-tracking practice. Lower = more nominal-friendly.")
+parser.add_argument("--current_speed", type=float, default=0.0,
+                    help="Plan-A fine-tune environment: constant world-frame current of this "
+                         "magnitude [m/s] per segment, heading redrawn U(0,2pi) each segment "
+                         "(the deployment analogue is 'a site with current whose direction "
+                         "the robot meets at every wall bearing'). The MPC internal model "
+                         "stays nominal — the disturbance is the test subject. 0 = off.")
 parser.add_argument("--fluid_scale_fixed", type=str, default="",
                     help="E2b' plant-specific fine-tune: FIXED fluid-coefficient scales, "
                          "'s' or 'am,ld,qd' (e.g. '1.5' or '1.5,0.7,0.7'). Deterministic "
@@ -210,6 +216,12 @@ def main() -> None:
         state = torch.load(args_cli.resume_ckpt, map_location="cpu")
         if "opt" in state:  # continue the Adam state too (fine-tune, not re-init)
             learner.opt.load_state_dict(state["opt"])
+            # load_state_dict restores param_groups WHOLESALE — including the lr the
+            # checkpoint was trained with, silently clobbering --lr (found 2026-08-10:
+            # an lr-3e-5 'retrain' replayed the 5e-4 run bit-for-bit). Moments/steps are
+            # what we want to keep; the lr must follow the CLI.
+            for g in learner.opt.param_groups:
+                g["lr"] = args_cli.lr
     loss_cfg = WallScanLossCfg(max_thrust=prm.max_thrust)
     if args_cli.l_v_z is not None:
         loss_cfg.l_v_z = args_cli.l_v_z
@@ -234,6 +246,14 @@ def main() -> None:
         """Random (radius, bearing, depth, attitude, phase) so a step budget buys coverage."""
         env.reset()
         env.episode_length_buf[:] = 0
+        if args_cli.current_speed > 0.0:
+            # Same OceanCurrent path the runner's CurrentDriver uses (env_variants).
+            # Set AFTER env.reset() so a reset cannot zero it under us.
+            h = float(rng.uniform(0.0, 2.0 * math.pi))
+            v = torch.zeros(1, 6, device=dev)
+            v[0, 0] = args_cli.current_speed * math.cos(h)
+            v[0, 1] = args_cli.current_speed * math.sin(h)
+            env._hydro._current.set(ALL, velocity=v)
         if args_cli.fluid_scale_fixed:
             v = [float(x) for x in args_cli.fluid_scale_fixed.split(",")]
             am, ld, qd = (v * 3)[:3] if len(v) == 1 else v

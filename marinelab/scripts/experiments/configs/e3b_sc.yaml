@@ -1,0 +1,26 @@
+# Plan A (advanced_experiments_todo §A): current-site adaptation, zero-shot arm.
+# Deterministic current profiles at two magnitudes; V8a evaluated as-is. step15/sine15
+# duplicate the official E3 conditions (same numbers expected — cross-check), 0.25 m/s
+# conditions add the headroom probe. MPC internal model stays nominal.
+exp: e3b_sc
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  tam: fixed
+  ckpt: checkpoints/diff_wmpc/policy_final.pt
+
+conditions:
+  step15: {ckpt: checkpoints/dw_e3b_sc15/policy_final.pt, current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}}
+  sine15: {ckpt: checkpoints/dw_e3b_sc15/policy_final.pt, current: {type: sine, speed: 0.15, heading_deg: 0.0, period: 30.0}}
+  step25: {ckpt: checkpoints/dw_e3b_sc25/policy_final.pt, current: {type: step, speed: 0.25, heading_deg: 0.0, t_switch: 90.0, mode: reverse}}
+  sine25: {ckpt: checkpoints/dw_e3b_sc25/policy_final.pt, current: {type: sine, speed: 0.25, heading_deg: 0.0, period: 30.0}}
+
+methods:
+  diff:
+    tam: fixed
+
+seeds: [0, 1, 2]
