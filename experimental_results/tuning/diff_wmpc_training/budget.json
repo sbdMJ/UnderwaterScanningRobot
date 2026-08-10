@@ -1,0 +1,8 @@
+{
+ "trials": 1,
+ "episodes": 100,
+ "env_steps": 60000,
+ "wall_clock_s": 3000.0,
+ "method": "diff_wmpc_train",
+ "note": "V8a recipe (60k steps, attitude 0.7@20%, lr 5e-4); wall-clock measured 2026-08-09 on this host (~50 min). PPO training cost lives in W&B (rb_train runs) and is NOT fabricated here - inject when the numbers are pulled."
+}

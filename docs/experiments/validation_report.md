@@ -146,6 +146,12 @@ F3에서 "섭동 강도에 따라 objective가 증가"하는 기대와 달리 �
 (pre-V8a diff는 9,001→14,493→충돌로 실제 단조였음) 또는 (b) 초기자세 강도를
 스윕 축으로 하는 추가 조건이 필요함을 명시한다.
 
+**후속 해결 (2026-08-10)**: 스캔 속도 축(e2s, 1×/1.5×/2×)이 단조 축으로 확보됨 —
+nominal은 2.2× 악화, 튜닝 3종(bo/ssi/diff)은 +34% 후 평탄, diff 전 속도 선두.
+"섭동 강도에 따른 열화" 서사는 이 축으로 서술 가능 (diff_tuning_history §9.1).
+또한 조류 3-arm(e3b)·플랜트 3-arm(e2c) 모두에서 zero-shot ≈ fine-tuned ≈
+from-scratch — zero-shot 상한 결론이 두 적응 축에서 재현됨 (§9.2).
+
 ## 5. 출처
 
 - Diff-WMPC: Jahncke et al., RA-L 2026 (부모 논문; MOBO-MPC 460k 샘플/1,071 s,
