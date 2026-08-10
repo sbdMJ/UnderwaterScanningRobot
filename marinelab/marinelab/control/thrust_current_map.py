@@ -82,6 +82,22 @@ class ThrustCurrentMap:
         return np.clip(out, -np.asarray(self.amps_limit), np.asarray(self.amps_limit))
 
 
+def split_pair_constants(k_sum: float, null_amps_a: float, null_amps_b: float) -> tuple[float, float]:
+    """Decompose a pair-run calibration into per-thruster constants.
+
+    Pair bollard pull at equal per-thruster current gives the SUM ``k_a + k_b`` (the
+    moments of a symmetric pair cancel, which is what makes a narrow bridle workable —
+    thruster_mapping.md §4b). The free-float zero-moment null — currents ``(I_a*, I_b*)``
+    at which the pair produces no yaw (roll for the heave pair) — gives the RATIO via
+    ``k_a·I_a* = k_b·I_b*``. Together they pin ``(k_a, k_b)``.
+    """
+    if k_sum <= 0.0 or null_amps_a <= 0.0 or null_amps_b <= 0.0:
+        raise ValueError("k_sum and both null currents must be positive")
+    r = null_amps_b / null_amps_a  # = k_a / k_b
+    k_b = k_sum / (1.0 + r)
+    return k_sum - k_b, k_b
+
+
 def fit_thrust_constant(amps, newtons) -> tuple[float, float]:
     """Through-origin least squares fit of the per-thruster thrust constant k [N/A].
 

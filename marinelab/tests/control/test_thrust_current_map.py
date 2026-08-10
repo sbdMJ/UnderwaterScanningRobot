@@ -7,6 +7,7 @@ from marinelab.control.thrust_current_map import (
     SIM_TO_TELEOP_SIGN,
     ThrustCurrentMap,
     fit_thrust_constant,
+    split_pair_constants,
 )
 
 NO_SIGN = (1.0,) * 6
@@ -81,3 +82,21 @@ def test_fit_rejects_degenerate_input():
         fit_thrust_constant([], [])
     with pytest.raises(ValueError):
         fit_thrust_constant([0.0, 0.0], [1.0, 2.0])
+
+
+def test_pair_split_satisfies_both_the_sum_and_the_null_condition():
+    # pair sum 4.0 N/A; yaw-null found at (I_a*, I_b*) = (1.0, 1.25)
+    k_a, k_b = split_pair_constants(4.0, 1.0, 1.25)
+    assert k_a + k_b == pytest.approx(4.0)
+    # zero-moment condition: k_a·I_a* = k_b·I_b*
+    assert k_a * 1.0 == pytest.approx(k_b * 1.25)
+
+
+def test_pair_split_is_equal_for_a_symmetric_null():
+    assert split_pair_constants(4.2, 1.5, 1.5) == pytest.approx((2.1, 2.1))
+
+
+def test_pair_split_rejects_nonpositive_inputs():
+    for bad in ((0.0, 1.0, 1.0), (4.0, -1.0, 1.0), (4.0, 1.0, 0.0)):
+        with pytest.raises(ValueError):
+            split_pair_constants(*bad)
