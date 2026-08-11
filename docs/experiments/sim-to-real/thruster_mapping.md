@@ -262,7 +262,10 @@ python marinelab/scripts/experiments/hw_thrust_calibrate.py 측정값.csv \
 ## 4d. 실측 결과 (2026-08-11 bollard pull, §4b 쌍 프로토콜)
 
 원본: [`data/bollard_pull_20260811.csv`](data/bollard_pull_20260811.csv) (손저울
-판독 — 측정자 주석: 고정밀 아님). **0.5 A에서 전 쌍 0 kg** → 모델을 원점 통과에서
+판독 — 측정자 주석: 고정밀 아님). 리깅: 수면 위 상단에 **단일 수평 라인**
+(쌍 구동이라 모멘트 상쇄 → 브라이들 불필요; 부착점–추력선 수직 오프셋의 피치
+모멘트는 이 힘 크기(≤5 N)에서 복원 모멘트가 1–2° 기울기로 흡수, cos 오차 <0.1%).
+**0.5 A에서 전 쌍 0 kg** → 모델을 원점 통과에서
 **데드존 아핀 F = k·(I − I₀)** 로 교체 (마찰 토크를 넘어야 추력 시작;
 `fit_thrust_affine`, mapper의 `amps_offset` + `deadband_u`). I₀는 명령 공간
 값이라 teleop 데드존 보상까지 포함한 유효값이다.
