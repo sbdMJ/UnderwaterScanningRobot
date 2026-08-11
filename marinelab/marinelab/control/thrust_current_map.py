@@ -34,13 +34,13 @@ import numpy as np
 #: Bench-verified 2026-08-09: identity holds.
 SIM_TO_VESC_ORDER = (0, 1, 2, 3, 4, 5)
 
-#: sim axis convention -> teleop command sign. surge/sway derived from the 2026-08-09
-#: bench run; heave CORRECTED 2026-08-11 from the 122531 bag dynamics: the depth-hold
-#: session is only consistent with (I_T5<0, I_T6>0) being UP thrust (the vehicle held a
-#: 12.6 N NEGATIVE buoyancy against it, hw_bag_heave_drag.py) — the earlier bench-derived
-#: heave orientation had the "positive direction" flipped. So sim +z (up) on the heave
-#: pair maps to VESC currents (-,+): sign[4] = -1, sign[5] = +1.
-SIM_TO_TELEOP_SIGN = (1.0, 1.0, -1.0, -1.0, -1.0, 1.0)
+#: sim axis convention -> teleop command sign, from the 2026-08-09 bench run and pinned
+#: by direct in-water observation (2026-08-11/12): the vehicle is positively buoyant and
+#: (I_T5, I_T6) = (-1, +1) drives it DOWN, so sim +z (up) maps to (+, -) on the heave
+#: pair. (A 2026-08-11 reanalysis of the 122531 bag briefly argued the opposite; that
+#: session had tether handling — an unmodeled external force — and was retracted. See
+#: thruster_mapping.md §4e.)
+SIM_TO_TELEOP_SIGN = (1.0, 1.0, -1.0, -1.0, 1.0, -1.0)
 
 
 @dataclass

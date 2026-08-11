@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Heave drag + net buoyancy ID from the 2026-08-06 teleop bag (122531).
+"""[RETRACTED 2026-08-11 — do not trust the numbers] Heave drag + buoyancy ID attempt.
+
+The analysis below assumes free swimming, but the session had tether handling (the
+operator confirmed the vehicle is positively buoyant and that (-,+) drives it DOWN,
+which contradicts the free-swimming reading of the hold/ascend segments). Kept only as
+a record of the method and the failure mode: a teleop bag cannot anchor a force balance
+unless tether slack is known. Use the dedicated protocol in thruster_mapping.md §4c/§4e.
 
 The bag's /teleop/thruster_currents are actual VESC currents (mix_thrusters
 applies TAM, gain, max_current AND polarity before publishing). The session
