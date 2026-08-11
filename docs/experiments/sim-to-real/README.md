@@ -27,6 +27,8 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | B-4 | 122531 bag(마커 가시)으로 ArUco 실측: fix 1.3 Hz, 혁신 6.5 cm, 점프 없음. baseline/sfix 20셀: **red-flag 해제** (ssi 761=1.09×GT, nominal 999=1.03×GT) | `08f50ee`, `7752a27` |
 | C-① | **estimator 브리지**: `TopicSampleAssembler`(순수, 테스트 6) + `pkrc_wallscan_bridge` ROS2 패키지 + bag 리플레이 검증 도구 (122531 PLUMBING OK). `/ukfm/odom_validated`만 절대 fix로 소비, θ 3-튜플 전달 | `a4e5fc2` |
 | B-5 | 마커 가시성 실측 한계 **7 m** 반영 (vis7): +2~3% 비용, ŝ 최악 8.6 cm, 충돌 0 — **E5 go** | `a052da0` |
+| C-③′ | bollard pull 실측(2026-08-11): 데드존 아핀 모델, 스러스터당 ~3.7 N (sim의 9%) | `8b78c6d` |
+| B-6 | **e5_lowthrust** (3.68 N sim 재검증, 20셀): cycles 0.0 — **no-go, 수직 이송 추력 부족**. 결정: max_current 상향(heave 9 A / sway 5 A) 권고, 근거·역산은 `thruster_mapping.md` §4d | (이 커밋) |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
