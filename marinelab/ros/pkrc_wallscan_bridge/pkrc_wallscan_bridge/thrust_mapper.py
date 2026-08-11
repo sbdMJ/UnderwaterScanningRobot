@@ -31,17 +31,20 @@ class ThrustMapper(Node):
         p("amps_at_full", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
         p("amps_limit", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
         p("newton_per_amp", [0.0] * 6)  # all-zero = uncalibrated fallback
+        p("amps_offset", [0.0] * 6)  # deadzone currents I0 (2026-08-11 bollard pull)
         p("max_thrust", 40.0)
         p("stale_zero_s", 0.5)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         k = [float(v) for v in g("newton_per_amp")]
+        off = [float(v) for v in g("amps_offset")]
         self.map = ThrustCurrentMap(
             order=tuple(int(v) for v in g("order")),
             sign=tuple(float(v) for v in g("sign")),
             amps_at_full=tuple(float(v) for v in g("amps_at_full")),
             amps_limit=tuple(float(v) for v in g("amps_limit")),
             newton_per_amp=tuple(k) if any(v > 0.0 for v in k) else None,
+            amps_offset=tuple(off) if any(v > 0.0 for v in off) else None,
             max_thrust=float(g("max_thrust")))
         self.stale_zero = float(g("stale_zero_s"))
         self._last_rx = None

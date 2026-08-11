@@ -19,6 +19,10 @@ Calibration states:
   (depth hold) only.
 * CALIBRATED: ``newton_per_amp`` per thruster (bollard pull / datasheet, Step 1-2) —
   ``I = u * max_thrust / k_i``, still clamped to ``amps_limit``.
+* CALIBRATED + DEADZONE: the 2026-08-11 bollard pull measured zero thrust below
+  ~0.7 A (friction torque must be overcome first), so the calibrated model is affine,
+  ``F = k·(I − I₀)`` → ``I = sign(F)·(I₀ + |F|/k)``, with a small ``deadband_u`` under
+  which the command is zeroed instead of jumping to ±I₀.
 """
 from __future__ import annotations
 
@@ -51,6 +55,12 @@ class ThrustCurrentMap:
     amps_limit: tuple[float, ...] = (3.0, 3.0, 3.0, 3.0, 5.0, 5.0)
     #: measured thrust constants (N/A) per thruster; None = uncalibrated fallback.
     newton_per_amp: tuple[float, ...] | None = None
+    #: measured deadzone currents I₀ (A, command space) per thruster; None = no offset.
+    #: Only honoured on the calibrated path: I = sign(F)·(I₀ + |F|/k).
+    amps_offset: tuple[float, ...] | None = None
+    #: |u| at or below which the command is zeroed rather than jumping to ±I₀ —
+    #: keeps closed-loop chatter around u=0 from banging the deadzone compensation.
+    deadband_u: float = 0.05
     #: what |u| = 1 means in newtons (PlantParams.max_thrust).
     max_thrust: float = 40.0
 
@@ -75,11 +85,37 @@ class ThrustCurrentMap:
         if self.newton_per_amp is not None:
             k = np.asarray(self.newton_per_amp, dtype=float)
             amps_sim = u * self.max_thrust / k
+            if self.amps_offset is not None:
+                off = np.asarray(self.amps_offset, dtype=float)
+                amps_sim = np.where(np.abs(u) > self.deadband_u,
+                                    amps_sim + np.sign(u) * off, 0.0)
         else:
             amps_sim = u * np.asarray(self.amps_at_full, dtype=float)
         out = np.zeros(6)
         out[self._order_idx] = amps_sim
         return np.clip(out, -np.asarray(self.amps_limit), np.asarray(self.amps_limit))
+
+
+def fit_thrust_affine(amps, newtons) -> tuple[float, float, float]:
+    """Least-squares fit of the deadzone thrust model ``F = k·(I − I₀)``.
+
+    The 2026-08-11 bollard pull read exactly zero at 0.5 A on every pair — friction
+    torque must be overcome before the prop produces thrust, so the model is affine,
+    not through-origin. Only thrust-producing points (F > 0) enter the fit; zero rows
+    are the caller's consistency check (they must sit at or below the fitted I₀).
+    Returns ``(k [N/A], i0 [A, >= 0], worst_abs_residual [N])``.
+    """
+    a = np.abs(np.asarray(amps, dtype=float).reshape(-1))
+    f = np.abs(np.asarray(newtons, dtype=float).reshape(-1))
+    live = f > 0.0
+    if int(live.sum()) < 2:
+        raise ValueError("need at least 2 thrust-producing points to fit (k, I0)")
+    k, b = np.polyfit(a[live], f[live], 1)
+    if k <= 0.0:
+        raise ValueError(f"non-positive fitted slope {k:.3f} N/A — data inconsistent")
+    i0 = max(0.0, float(-b / k))
+    resid = float(np.max(np.abs(f[live] - k * (a[live] - i0))))
+    return float(k), i0, resid
 
 
 def split_pair_constants(k_sum: float, null_amps_a: float, null_amps_b: float) -> tuple[float, float]:

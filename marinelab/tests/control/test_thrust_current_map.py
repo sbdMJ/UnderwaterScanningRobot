@@ -6,6 +6,7 @@ import pytest
 from marinelab.control.thrust_current_map import (
     SIM_TO_TELEOP_SIGN,
     ThrustCurrentMap,
+    fit_thrust_affine,
     fit_thrust_constant,
     split_pair_constants,
 )
@@ -100,3 +101,38 @@ def test_pair_split_rejects_nonpositive_inputs():
     for bad in ((0.0, 1.0, 1.0), (4.0, -1.0, 1.0), (4.0, 1.0, 0.0)):
         with pytest.raises(ValueError):
             split_pair_constants(*bad)
+
+
+def test_affine_fit_recovers_slope_and_deadzone():
+    # F = 3.2·(I − 0.7), plus a genuine deadzone point at 0.5 A reading zero
+    amps = [0.5, 1.0, 1.5, 2.0]
+    f = [0.0, 3.2 * 0.3, 3.2 * 0.8, 3.2 * 1.3]
+    k, i0, resid = fit_thrust_affine(amps, f)
+    assert k == pytest.approx(3.2)
+    assert i0 == pytest.approx(0.7)
+    assert resid == pytest.approx(0.0, abs=1e-12)
+
+
+def test_affine_fit_clamps_negative_deadzone_to_zero():
+    amps = [1.0, 2.0]
+    k, i0, _ = fit_thrust_affine(amps, [2.1, 4.0])  # intercept slightly positive
+    assert i0 == 0.0 and k > 0
+
+
+def test_affine_fit_needs_two_live_points():
+    with pytest.raises(ValueError):
+        fit_thrust_affine([0.5, 1.0], [0.0, 1.0])
+
+
+def test_calibrated_map_applies_the_deadzone_offset():
+    # k = 1.6 N/A, I0 = 0.7 A, max_thrust = 1.6·(3.0 − 0.7): u=±1 lands exactly
+    # on the 3 A limit, and a tiny u inside the deadband commands zero.
+    m = ThrustCurrentMap(sign=NO_SIGN, newton_per_amp=(1.6,) * 6,
+                         amps_offset=(0.7,) * 6, max_thrust=1.6 * 2.3,
+                         amps_limit=(3.0,) * 6)
+    amps = m.map([1.0, -1.0, 0.5, 0.02, 0.0, -0.5])
+    assert amps[0] == pytest.approx(3.0)
+    assert amps[1] == pytest.approx(-3.0)
+    assert amps[2] == pytest.approx(0.7 + 0.5 * 2.3)
+    assert amps[3] == 0.0 and amps[4] == 0.0  # deadband_u = 0.05
+    assert amps[5] == pytest.approx(-(0.7 + 0.5 * 2.3))
