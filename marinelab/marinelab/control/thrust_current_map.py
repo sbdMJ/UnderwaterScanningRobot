@@ -34,13 +34,13 @@ import numpy as np
 #: Bench-verified 2026-08-09: identity holds.
 SIM_TO_VESC_ORDER = (0, 1, 2, 3, 4, 5)
 
-#: sim axis convention -> teleop command sign, derived from the 2026-08-09 bench run
-#: anchored on teleop's proven absolute behaviours (UP drives forward, LEFT drives port —
-#: the sway inversion is already absorbed at teleop's key layer — and depth-hold works,
-#: fixing heave+ = descend). sim wants +x fwd / +y port / +z up per pair; teleop's command
-#: space is +surge fwd / +sway starboard / +heave down, and the teleop auto path applies
-#: its own wiring polarity on top, so this is axis translation only, not wiring.
-SIM_TO_TELEOP_SIGN = (1.0, 1.0, -1.0, -1.0, 1.0, -1.0)
+#: sim axis convention -> teleop command sign. surge/sway derived from the 2026-08-09
+#: bench run; heave CORRECTED 2026-08-11 from the 122531 bag dynamics: the depth-hold
+#: session is only consistent with (I_T5<0, I_T6>0) being UP thrust (the vehicle held a
+#: 12.6 N NEGATIVE buoyancy against it, hw_bag_heave_drag.py) — the earlier bench-derived
+#: heave orientation had the "positive direction" flipped. So sim +z (up) on the heave
+#: pair maps to VESC currents (-,+): sign[4] = -1, sign[5] = +1.
+SIM_TO_TELEOP_SIGN = (1.0, 1.0, -1.0, -1.0, -1.0, 1.0)
 
 
 @dataclass

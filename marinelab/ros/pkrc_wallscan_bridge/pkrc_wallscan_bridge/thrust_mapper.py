@@ -27,7 +27,7 @@ class ThrustMapper(Node):
         super().__init__("thrust_mapper")
         p = self.declare_parameter
         p("order", [0, 1, 2, 3, 4, 5])
-        p("sign", [1.0, 1.0, -1.0, -1.0, 1.0, -1.0])  # bench-derived, 2026-08-09
+        p("sign", [1.0, 1.0, -1.0, -1.0, -1.0, 1.0])  # heave corrected 2026-08-11 (bag ID)
         p("amps_at_full", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
         p("amps_limit", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
         p("newton_per_amp", [0.0] * 6)  # all-zero = uncalibrated fallback

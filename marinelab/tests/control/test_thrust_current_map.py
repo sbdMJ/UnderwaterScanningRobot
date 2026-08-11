@@ -22,11 +22,12 @@ def test_uncalibrated_full_scale_matches_the_teleop_manual_currents():
 
 
 def test_default_sign_translates_sim_axes_into_teleop_command_space():
-    """Bench 2026-08-09: sim +y (port) needs a NEGATIVE teleop sway command on T3/T4,
-    and sim +z (up) is teleop heave DOWN on T6 — the (+,+,-,-,+,-) translation."""
-    assert ThrustCurrentMap().sign == SIM_TO_TELEOP_SIGN == (1.0, 1.0, -1.0, -1.0, 1.0, -1.0)
+    """Bench 2026-08-09 (surge/sway) + 122531 bag dynamics 2026-08-11 (heave): sim +y
+    (port) needs a NEGATIVE sway command on T3/T4, and sim +z (up) on the heave pair
+    is VESC (-,+) — the depth-hold session pins that orientation (hw_bag_heave_drag)."""
+    assert ThrustCurrentMap().sign == SIM_TO_TELEOP_SIGN == (1.0, 1.0, -1.0, -1.0, -1.0, 1.0)
     amps = ThrustCurrentMap().map([1.0] * 6)
-    assert list(np.sign(amps)) == [1.0, 1.0, -1.0, -1.0, 1.0, -1.0]
+    assert list(np.sign(amps)) == [1.0, 1.0, -1.0, -1.0, -1.0, 1.0]
 
 
 def test_calibrated_path_converts_newtons_through_the_thrust_constant():
