@@ -98,6 +98,16 @@ def build_env(cell: ExperimentCell):
         cfg.hydrodynamics = PKRCHydrodynamicsCfg()
     if "dr_fluid_scale" in opt:  # E2 sweep: rescale the fluid-coefficient DR half-range
         apply_fluid_dr_scale(cfg, float(opt["dr_fluid_scale"]))
+    # E5 low-authority conditions (docs/experiments/sim-to-real/thruster_mapping.md §4d).
+    # Both knobs act on the env cfg BEFORE construction, so PlantParams.from_env reads the
+    # same values back (t.cfg.thrust_coefficient / h.buoyancy_force) and the controller
+    # model stays consistent with the plant automatically.
+    if "max_thrust" in opt:  # measured drivetrain limit: |u|=1 <-> this many newtons
+        cfg.thrusters.thrust_coefficient = float(opt["max_thrust"])
+    if "residual_buoyancy_n" in opt:  # trim displaced volume to a measured net buoyancy
+        cfg.hydrodynamics.volume = (
+            float(cfg.hydrodynamics.body_mass) + float(opt["residual_buoyancy_n"]) / 9.81
+        ) / float(cfg.hydrodynamics.water_density)
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 
