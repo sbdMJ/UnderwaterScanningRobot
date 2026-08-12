@@ -28,7 +28,8 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | C-① | **estimator 브리지**: `TopicSampleAssembler`(순수, 테스트 6) + `pkrc_wallscan_bridge` ROS2 패키지 + bag 리플레이 검증 도구 (122531 PLUMBING OK). `/ukfm/odom_validated`만 절대 fix로 소비, θ 3-튜플 전달 | `a4e5fc2` |
 | B-5 | 마커 가시성 실측 한계 **7 m** 반영 (vis7): +2~3% 비용, ŝ 최악 8.6 cm, 충돌 0 — **E5 go** | `a052da0` |
 | C-③′ | bollard pull 실측(2026-08-11): 데드존 아핀 모델, 스러스터당 ~3.7 N (sim의 9%) | `8b78c6d` |
-| B-6 | **e5_lowthrust** (3.68 N sim 재검증, 20셀): cycles 0.0 — **no-go, 수직 이송 추력 부족**. 결정: max_current 상향(heave 9 A / sway 5 A) 권고, 근거·역산은 `thruster_mapping.md` §4d | (이 커밋) |
+| B-6 | **e5_lowthrust** (3.68 N sim 재검증, 20셀): cycles 0.0 — no-go (단, sim 감쇠 조건부) | `115a863` |
+| C-④ | **§4f 항력 실측 세션** (2026-08-11 mj_ws bags): 하강 종단 5 A = 0.15 m/s < 0.2 (직접 측정) — **하강이 병목**, 부력 +0.81 kgf, sim heave 감쇠 2.3~3.5× 과대 확정. 선택지: 발라스트 +0.7–0.8 kg(권장, 5 A로 충족) vs heave 7 A 상향. surge/sway는 판정 불가(요잉·소형 수조) — 재시도 필요 | `fa62056` |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
