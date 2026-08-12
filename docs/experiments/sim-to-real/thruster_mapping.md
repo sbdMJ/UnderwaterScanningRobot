@@ -470,20 +470,24 @@ sim/plant JSON 보정(새 조건명) → e5_lowthrust 재실행 → max_current 
 4. bag: `/wallscan/current_cmd /bar10xt/depth /dvl/data /imu/data /teleop/depth_debug`
    — **current_cmd 필수** (지난 세션 누락 재발 방지).
 
-**surge/sway 재시도 — 수동 키보드 모드** (헤딩 홀드가 요잉 억제; 요 보정은
-쌍에 반대칭이라 순 병진력 불변; 수동 모드에선 `/teleop/thruster_currents`가
-실제 전송 전류):
-- 사전 체크 (2분): 수동 sway 중 `ros2 topic echo /dvl/data --field velocity`
-  — **vy 생존 확인** (움직이는데 0이면 DVL 장착 방향/설정부터, 실험 중단).
-- 녹화: `/dvl/data /teleop/thruster_currents /imu/data /teleop/yaw_debug /bar10xt/depth`.
-- 런: sway 우현 **키 꾹 유지** 8–10 s → 좌현 8–10 s → surge 전/후진 각 8–10 s
-  → 전체 반복 ×2. 키를 끊어 누르면 0.4 s 감쇠로 전류가 출렁여 정상 구간이
-  깨진다. ~0.5 m 잠긴 상태에서 (수면 조파 회피, depth 어시스트 활용), 이동
-  방향 벽 여유 ≥2–3 m, 테더 수평 슬랙.
-- (선택) 두 번째 진폭: `-p max_current_sway:=2.0 -p max_current_surge:=2.0`로
-  재실행 후 4런 반복.
-- 판독: 런 말미 3–4 s의 DVL 정상 속도 vs 순 힘
-  (sway 3 A: F = 3.507·(3−0.764) ≈ 7.8 N; surge: 3.188·(3−0.694) ≈ 7.4 N).
+**surge/sway 재시도 — 수동 키보드 모드, 아크릴 소형 수조판** (2026-08-12:
+아크릴 바닥은 DVL 음향 락이 안 잡힘 — 지난 세션 vy≈0의 원인. **DVL 판독
+전면 불신**, 축별 대체 관측 사용. 헤딩 홀드가 요잉 억제; 요 보정은 쌍에
+반대칭이라 순 병진력 불변; 수동 모드에선 `/teleop/thruster_currents`가 실제
+전송 전류):
+- **surge = 소나 거리 변화율**: Ping1D(전방)로 벽을 향해 전진/벽에서 후진 —
+  `/ukfm/wall_distance`(9.5 Hz, σ 3.4 cm)의 3–4 s 기울기 = 속도 (1–2 cm/s
+  정확도). 사전 체크: echo로 벽 거리 값 정상 확인, 최소거리 ~0.3 m 아래 무효.
+  벽 ~0.4 m 전 정지. 전/후진 각 ×2.
+- **sway = 상부 폰 동영상 + 테이프 50 cm 눈금**: 정상 구간의 눈금 통과 시간
+  = 속도 (~5% 오차). 좌/우 각 ×2, 키 꾹 유지 (끊어 누르면 0.4 s 감쇠로 전류
+  출렁임).
+- 짧은 런 정당성: 수평 τ = m_eff/d ≈ 0.4–2 s → 2–3 s면 정상 도달. 판정은
+  사실상 이지선다 — 3 A에서 sim(119)이면 ~0.066, heave처럼 절반 이하면
+  ~0.13 m/s. 정상 미도달 런은 끝속도 하한으로 (0.1 초과면 sim 반증 확정).
+- 녹화: `/ukfm/wall_distance /teleop/thruster_currents /imu/data /bar10xt/depth`.
+- 판독 기준 힘: sway 3 A pair F = 3.507·(3−0.764) ≈ 7.8 N;
+  surge 3.188·(3−0.694) ≈ 7.4 N. 벽 근접 바이어스(감쇠 과대 방향)는 캐비앗.
 
 **2026-08-11 수중 확인**: `[0,0,0,0,−1.0,+1.0]`에 하강, 로봇은 양성 부력
 (측정자 직접 확인) — §4b heave 부호의 수중 실증 + mj_ws→teleop auto→CAN
