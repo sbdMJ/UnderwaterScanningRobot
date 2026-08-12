@@ -489,6 +489,15 @@ sim/plant JSON 보정(새 조건명) → e5_lowthrust 재실행 → max_current 
 - 판독 기준 힘: sway 3 A pair F = 3.507·(3−0.764) ≈ 7.8 N;
   surge 3.188·(3−0.694) ≈ 7.4 N. 벽 근접 바이어스(감쇠 과대 방향)는 캐비앗.
 
+**(선택, 같은 세션 권장) estimator_bridge 라이브 스모크**: 마커 체인은 지금껏
+bag 리플레이로만 검증됨 — 작은 수조에서 마커 걸고 `ukfm_localization` +
+`estimator_bridge`(mj_ws) 실행, ① `/ukfm/odom_validated` 발행, ② 브리지의
+첫 fix 앵커 로그, ③ `/wallscan/state`(50 Hz)·`estimator_debug` 흐름 확인.
+탱크 좌표 변환이 본 탱크 기준이라 **위치 값은 무의미, 체인 생존만 판정** —
+통과 시 Phase E의 마커 관련 잔여는 측량(marker_x/y/yaw)과 7 m 가시성 현장
+확인만 남는다. 항력 실험 자체에는 마커 불필요 (heave=압력, surge=소나,
+sway=영상; ArUco는 sway 백업 관측으로만 ~15% 정확도).
+
 **2026-08-11 수중 확인**: `[0,0,0,0,−1.0,+1.0]`에 하강, 로봇은 양성 부력
 (측정자 직접 확인) — §4b heave 부호의 수중 실증 + mj_ws→teleop auto→CAN
 체인 동작 실증. 잔여 부력 상한(<0.9 N) 추정은 §4c 평형 전류 실측으로 확정
