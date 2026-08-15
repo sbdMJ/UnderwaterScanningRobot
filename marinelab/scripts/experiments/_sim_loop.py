@@ -108,6 +108,15 @@ def build_env(cell: ExperimentCell):
         cfg.hydrodynamics.volume = (
             float(cfg.hydrodynamics.body_mass) + float(opt["residual_buoyancy_n"]) / 9.81
         ) / float(cfg.hydrodynamics.water_density)
+    if "damping_scale_xyz" in opt:  # measured translational drag (§4f/§4g): one scale
+        # per axis applied to BOTH d1 and d2 (a single force level per axis cannot
+        # separate them, so the measured operating point pins the combined curve)
+        sxyz = [float(v) for v in opt["damping_scale_xyz"]]
+        for name in ("linear_damping", "quadratic_damping"):
+            base = list(getattr(cfg.hydrodynamics, name))
+            for i, s in enumerate(sxyz):
+                base[i] *= s
+            setattr(cfg.hydrodynamics, name, tuple(base))
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 

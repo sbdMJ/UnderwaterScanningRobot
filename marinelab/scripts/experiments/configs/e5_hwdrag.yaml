@@ -1,0 +1,46 @@
+# E5 re-verdict with MEASURED drag: e5_lowthrust said no-go at 3.68 N, but that
+# verdict was conditional on the sim's translational damping — since measured to be
+# 3-7x too high on every axis (thruster_mapping.md §4f heave 2.3-3.5x, §4g surge
+# 5-7x / sway >=6.6x). This config reruns the identical protocol with the damping
+# scaled to the measured operating points:
+#   surge x0.175 (2.51 N @ ~0.12 m/s), sway x0.151 (2.51 N @ 0.133 m/s),
+#   heave x0.34  (6.36 N @ 0.15 m/s, 2026-08-11 descent terminals).
+# max_thrust stays the scalar 3.68 N (horizontal 3 A limit) — CONSERVATIVE for the
+# heave pair, which really has ~7.15 N at its 5 A clamp: a pass here is a pass with
+# ~2x heave margin on the real vehicle; a marginal descent failure here is NOT a
+# real no-go. Controls: e5_ekf vis7 40 N (ssi 786 / nominal 1020, cycles 2.0) and
+# e5_lowthrust 3.68 N with shipped damping (cycles 0.0 everywhere).
+exp: e5_hwdrag
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  max_thrust: 3.68
+  damping_scale_xyz: [0.175, 0.151, 0.34]
+
+conditions:
+  # As-is robot: net buoyancy from the measured 3.1 A heave equilibrium
+  # (B = 2 x 1.674 x (3.1 - 0.729) = 7.9 N, §4f). Answers whether ballast trim is
+  # truly required once the drag is realistic.
+  hwdrag:
+    residual_buoyancy_n: 7.9
+  # Adopted deployment trim (§4g): single 1 kg lead -> ~-1 N slightly negative.
+  hwdrag_trim:
+    residual_buoyancy_n: -1.0
+
+methods:
+  nominal:
+    tam: fixed
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]
