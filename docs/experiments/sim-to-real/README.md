@@ -33,6 +33,7 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | C-⑤ | **§4g surge/sway 실측 세션** (2026-08-15, 수동 모드 + Ping1D/테이프): 1.48 A(~2.5 N)에서 surge 0.10–0.14, sway ≥0.133 m/s — **sim 병진 항력 전 축 과대 확정** (surge 5–7×, sway ≥6.6×). 수평 축 전부 통과 (3 A 외삽 0.2–0.4 m/s ≫ 스캔 램프), 남은 병목 = 하강(발라스트 트림 대기) | `5528245` |
 | B-7 | **e5_hwdrag 재판정** (실측 항력 배율 주입, 20셀): B-6 no-go 번복 — **트림(납 1 kg) 조건부 go**. hwdrag_trim cycles 2.0 (5/5 시드, 충돌 0, nominal obj 7,595 / ssi 12,524*), 현상태 부력 +7.9 N은 cycles 0.0 (트림 필수를 sim이 독립 확인). heave 2× 보수 모델 기준이라 실기체는 여유. *ssi s2 이상치 — 저권한 온라인 적응 안정성은 E5 전 점검 이월 | `34014de` |
 | C-⑥ | **§4g 트림 세션** (2026-08-15, 납 0.5 kg): 평형 3.1→0.85 A 차분으로 **heave k = 0.99 N/A 실측 확정** (가정치의 59%; 27 s 자유 부양으로 검증) → B(트림 전) ≈ 4.7 N, heave d_eff ≈ 25로 정정 (전 축 20–25 수렴). auto 이탈 원인 = cmd pub 공백의 stale 복귀 (17_14 bag 무효 원인). 5 A 하강은 1.7 s auto 구간에서 0.14 m/s 하한 (τ 고려 시 0.22–0.33 외삽) — **0.85 m 수조에선 ≥0.2 직접 시연 불가, 본 탱크로 이월** | `047e7a5` |
+| D-① | **배포 plant 확정 + E4(c) 데스크톱**: `pkrc_plant_hw2026.json` (실측 종합; 테스트 2 추가) · `bench_inference.py` (isaaclab 무의존, 공유 코어째 계측) — 데스크톱 nominal 6.4 / ssi 6.5 ms (예산 20 ms, 초과 0%) · Jetson acados 빌드 절차 문서 | `c7f1c77` |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
@@ -74,18 +75,24 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 - [x] **heave 쌍 기하 벤치 검증 (2026-08-09)**: 좌/우 나란한 쌍 확정(롤 권한 유지),
       T5=우현·팔 0.1475 m 실측 → plant JSON Mx행 수정(부호 배정도 정정), mapper 부호
       `(+,+,−,−,+,−)` 확정, teleop 정합 전 항목 일치 — `thruster_mapping.md` §3a
-- [ ] **Step 1–2 캘리브레이션 (로봇)**: bollard pull 실측 → `newton_per_amp` 파라미터
-      + `pkrc_plant_fixed_tam.json`의 `max_thrust` 정합. 프로토콜·데이터 처리 준비 완료
-      (2026-08-09): [`thruster_mapping.md`](thruster_mapping.md) §4a + `hw_thrust_calibrate.py`
-      (CSV → k_i 피팅, 데드존 플래그, max_thrust 제안). 실측만 남음 — 캘리브레이션
-      전에는 teleop 수동 스케일(저대역 시험만).
+- [x] **Step 1–2 캘리브레이션 (로봇) — 완료 (2026-08-11~15)**: bollard pull(§4d) +
+      부력 차분 heave k(§4g) + 항력 실측(§4f/§4g) 전부 반영한 배포용 plant
+      **`marinelab/config/pkrc_plant_hw2026.json`** 확정 (mass 23.3 = +0.5 kg 납,
+      부력 +0.24 N, max_thrust 3.68, 병진 감쇠 ×0.175/0.151/0.20; TAM·부가질량·회전
+      감쇠는 fixed_tam 계승 = 미실측). sim 검증용 `pkrc_plant_fixed_tam.json`은
+      40 N 그대로 보존 — 조건명 분리 원칙.
 - [ ] (선택) sim asset TAM도 실측치로 갱신 + e5 재검증 — 기존 셀 비교 가능성과
       트레이드오프, 별도 결정
 
 ### Phase D — Jetson 실행 환경 + E4(c)
-- [ ] acados aarch64 빌드 절차 문서화 + 실행 (Jetson)
-- [ ] `bench_inference.py` 신설 (isaaclab 무의존): acados solve + SSI RFF 업데이트 실측
-      — 데스크톱 먼저, Jetson에서 재실행 → E4(c) 표. 20 ms 제어 예산 판정.
+- [x] acados aarch64 빌드 절차 문서화: [`jetson_acados_build.md`](jetson_acados_build.md)
+      (v0.5.3 정합, BLASFEO GENERIC, t_renderer aarch64 함정, 20 ms 판정 기준 +
+      초과 시 완화 순서 rti_iters→horizon). **Jetson 실행만 남음** (§5의 벤치 한 줄).
+- [x] `bench_inference.py` 신설 (isaaclab 무의존 — conftest식 패키지 shim 내장,
+      공유 폐루프 코어 `WallScanControlLoop`째로 계측) + **데스크톱 절반 완료**:
+      nominal total 6.36 ms (p99 7.78) / ssi 6.49 ms (p99 8.06, RFF+RK4 오버헤드
+      0.38 ms) — 예산 20 ms의 1/3, 초과 0%. `experimental_results/e4_inference/`.
+- [ ] Jetson에서 벤치 재실행 → E4(c) 표 완성 (`--label jetson`)
 - [ ] Jetson에 marinelab 체크아웃 + 브리지/컨트롤러 노드 colcon build
       (절차: [`marinelab/ros/pkrc_wallscan_bridge/README.md`](../../../marinelab/ros/pkrc_wallscan_bridge/README.md))
 
