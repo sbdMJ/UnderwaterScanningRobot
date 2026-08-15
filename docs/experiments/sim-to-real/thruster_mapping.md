@@ -467,8 +467,9 @@ sim/plant JSON 보정(새 조건명) → e5_lowthrust 재실행 → max_current 
 3. **5 A 하강 × 2–3회** (정지 시작, 바닥 전 컷; 예상 종단 ~0.22–0.25 m/s —
    **0.2 이상이면 heave 최종 통과**) + 보너스 **5 A 상승 1회** (예상 ~0.21) —
    상승까지 있으면 트림 후 D·B 분리 완결.
-4. bag: `/wallscan/current_cmd /bar10xt/depth /dvl/data /imu/data /teleop/depth_debug`
-   — **current_cmd 필수** (지난 세션 누락 재발 방지).
+4. bag: `/wallscan/current_cmd /teleop/thruster_currents /bar10xt/depth /dvl/data
+   /imu/data /teleop/depth_debug` — **current_cmd + thruster_currents 둘 다 필수**
+   (전자는 의도, 후자는 실전송 — 수동 복귀를 bag에서 즉시 탐지, 2026-08-15 함정).
 
 **surge/sway 재시도 — 수동 키보드 모드, 아크릴 소형 수조판** (2026-08-12:
 아크릴 바닥은 DVL 음향 락이 안 잡힘 — 지난 세션 vy≈0의 원인. **DVL 판독
@@ -557,6 +558,35 @@ e5_lowthrust는 전 조건 cycles 0.0.)
 - *ssi는 s2 1개 시드 이상치(40,955; 벽오차 평균을 75 cm로 끌어올림) — 저권한
   하에서 온라인 적응의 안정성은 E5 본실험 전 점검 항목으로 이월. 나머지
   4시드는 4,679–6,268로 nominal(5,568–7,149)보다 낫다.
+- ⚠ 2026-08-15 트림 세션 후 정정: "heave 2× 보수" 전제는 k ASSUMED 1.674
+  기준이었다. 잠정 실측 k≈0.99(아래)면 실제 heave 5 A 권한은 4.24 N/스러스터
+  — 모델 3.68 대비 **+15% 여유**로 줄어든다. 대신 heave 감쇠 배율도
+  0.34 → ~0.20으로 내려가(실측 d_eff 42→25) 속도 여유가 늘므로 go 판정의
+  방향은 유지; 확정치는 재실험 후 e5 재확인.
+
+### §4g 트림 세션 (2026-08-15) — heave k 잠정 실측, 하강 bag 무효
+
+- 납 1 kg → 음성 과다(가라앉음) → **0.5 kg 채택**. 새 평형 `[−0.85,+0.85]`
+  (여전히 약양성). 차분법(데드존 I₀ 소거): 납 물속 무게 0.5×0.911×9.81 =
+  4.47 N = 2k(3.1−0.85) → **k_T5/T6 ≈ 0.99 N/A (잠정)** — ASSUMED 1.674의
+  59%. heave 쌍이 수평 쌍(1.59–1.75)보다 확연히 약하다.
+- 파급 (전부 k에 선형): 트림 전 부력 7.9 → **≈4.7 N** (sim 출하값 4.9와
+  일치 — §4d hwdrag 조건 7.9는 과대였음); 8/11 하강 역산 heave d_eff 42 →
+  **≈25 N/(m/s)** — surge/sway 실측 18–24와 수렴 (전 축 ~20–25의 일관 그림);
+  트림 후 잔여 부력 ≈ +0.24 N.
+- **하강 bag(`rosbag2_2026_08_15-17_14_05`) 무효**: cmd `[−5,+5]` 상수인데
+  심도가 0.6 m 중심 ±0.1 m 진동(5왕복), `depth_debug`가 목표 0.6 m PID 오차를
+  추종 — **teleop이 수동 depth-hold 모드였음** (auto 미진입 또는 키 접촉 즉시
+  복귀). 8.5 N 상수 하향 추력으로 0.1 m/s 상승 반복은 물리적으로 불가.
+  `/teleop/thruster_currents` 미녹화라 bag만으로는 모드를 사후 확인할 수 없던
+  것이 함정 — 위 4번 목록에 반영.
+- ⚠ 같은 함정이 평형 측정에도 적용될 수 있음 (수동 depth-hold면 어느 전류든
+  "정지"로 보임) → k≈0.99는 재실험 확정 전까지 잠정.
+- **재실험 (~15분)**: ① auto 진입 후 teleop 로그로 AUTO 확인, 이후 키보드
+  비접촉 ② `/teleop/thruster_currents` 포함 녹화 ③ 3점 평형 확인 — auto에서
+  0 A(천천히 상승) / 0.85 A(정지) / 1.5 A(하강) — k 잠정치 확정
+  ④ `[−5,+5]` 하강 ×2–3 (바닥 전 컷). 예측(k=0.99): 순추력 ≈ 8.2 N →
+  종단 **0.22–0.33 m/s → 통과 전망**.
 
 ```
 wallscan_controller ──/wallscan/u──▶ thrust_mapper ──/wallscan/current_cmd──▶ teleop(auto)
