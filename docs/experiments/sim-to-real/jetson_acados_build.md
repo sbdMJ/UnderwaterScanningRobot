@@ -11,6 +11,9 @@
 - torch aarch64 (CPU면 충분 — `scan_state_machine`의 1-env 텐서 연산뿐):
   `pip3 install torch --index-url https://download.pytorch.org/whl/cpu` 또는
   JetPack 동봉 wheel. numpy는 casadi와 호환되는 1.x 유지 권장.
+- `pip3 install gymnasium` — `tasks.pkrc_wallscan.__init__`의 gym.register가
+  당긴다 (등록 문자열만이라 가볍고 isaaclab과 무관). bag 리플레이까지 하려면
+  `pip3 install rosbags`.
 
 ## 1. acados 소스 빌드
 

@@ -63,7 +63,12 @@ class EstimatorBridge(Node):
         p("tank_height", 10.0), p("tank_radius", 6.0)
         p("marker_x", 0.0), p("marker_y", 0.0), p("marker_yaw", 0.0)
         p("rate_hz", 50.0)
+        # Wall-range source. Default = the DVL forward altitude the 2026-08 sensor
+        # characterization ran on (NOT the Ping1D — see memory/§4g: it dies with the DVL
+        # on acrylic). For the Ping1D driver use wall_topic:=/sensor/sonar/ping1d/range
+        # with wall_msg:=range (sensor_msgs/Range instead of Float32).
         p("wall_topic", "/ukfm/wall_distance")
+        p("wall_msg", "float32")  # "float32" | "range"
         p("stale_warn_s", 1.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
@@ -85,7 +90,12 @@ class EstimatorBridge(Node):
         self.create_subscription(DVL, "/dvl/data", self._on_dvl, 10)
         self.create_subscription(Imu, "/imu/data", self._on_imu, 50)
         self.create_subscription(Float64, "/bar10xt/depth", self._on_depth, 10)
-        self.create_subscription(Float32, str(g("wall_topic")), self._on_wall, 10)
+        if str(g("wall_msg")) == "range":
+            from sensor_msgs.msg import Range
+
+            self.create_subscription(Range, str(g("wall_topic")), self._on_wall_range, 10)
+        else:
+            self.create_subscription(Float32, str(g("wall_topic")), self._on_wall, 10)
         self.create_subscription(Odometry, "/ukfm/odom_validated", self._on_ukfm, 10)
 
         self.pub_state = self.create_publisher(Odometry, "/wallscan/state", 10)
@@ -115,6 +125,9 @@ class EstimatorBridge(Node):
 
     def _on_wall(self, m: Float32) -> None:
         self.asm.feed_wall_range(float(m.data), self._now())
+
+    def _on_wall_range(self, m) -> None:  # sensor_msgs/Range (ping1d_sonar driver)
+        self.asm.feed_wall_range(float(m.range), self._now())
 
     def _on_ukfm(self, m: Odometry) -> None:
         pos = m.pose.pose.position
