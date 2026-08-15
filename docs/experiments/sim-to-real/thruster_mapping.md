@@ -528,6 +528,36 @@ sim/plant JSON 보정(새 조건명) → e5_lowthrust 재실행 → max_current 
 포인트는 데드존에 너무 가까워 피팅 부적합). sim 보정은 실측 운용점에서
 선형+이차 동일 배율 스케일로 — surge ×0.175, sway ×0.151, heave ×0.34.
 
+### 재판정 — e5_hwdrag (2026-08-15, 20셀): §4d no-go 번복, **트림 조건부 go**
+
+`e5_lowthrust`와 동일 프로토콜에 실측 항력 배율만 주입
+(`configs/e5_hwdrag.yaml`, `_sim_loop`의 `damping_scale_xyz` 훅).
+max_thrust는 스칼라 3.68 N 유지 = **heave 2× 보수** (실제 쌍 7.15 N@5 A) —
+여기서 통과하면 실기체는 여유.
+
+| 조건 | 방법 | objective (5-시드) | cycles | 충돌 | heave v | sway v | 벽오차 |
+|---|---|--:|--:|--:|--:|--:|--:|
+| hwdrag (+7.9 N 현상태) | nominal | 110,955 | **0.0** | 0 | — | — | 30 cm |
+| hwdrag (+7.9 N 현상태) | ssi | 114,369 | **0.0** | 0 | — | — | 167 cm |
+| hwdrag_trim (−1 N, 납 1 kg) | nominal | 7,595 | **2.0** | 0 | 0.160 | 0.100 | 17 cm |
+| hwdrag_trim (−1 N, 납 1 kg) | ssi | 12,524* | **2.0** | 0 | 0.163 | 0.104 | 75 cm* |
+
+(컨트롤: 40 N vis7 — ssi 786/nominal 1,020, cycles 2.0. 기존 항력의
+e5_lowthrust는 전 조건 cycles 0.0.)
+
+- **e5_lowthrust의 no-go는 sim 과대 항력이 만든 인공물**이었다. 실측 항력
+  + 발라스트 트림이면 **3.68 N 보수 모델로도 5/5 시드 스캔 완주** (sway 램프
+  0.1 정확 추종; heave 0.16 < 0.2는 보수 모델의 직접 결과 — 실기체 예측은
+  §4g의 0.22–0.25 m/s).
+- **트림은 필수**: 실측 항력에서도 +7.9 N 부력은 cycles 0.0 (heave 쌍 정적
+  부하 107%). sim이 §4g 채택안(납 1 kg)을 독립 확인.
+- objective 열화(40 N 대비 nominal 7.4×)는 완주 실패가 아니라 추종 정밀도
+  (벽오차 17 vs ~5 cm)와 heave 속도에서 옴 — 실기체에서 heave 권한 2×가
+  돌아오면 상당 부분 회복 전망.
+- *ssi는 s2 1개 시드 이상치(40,955; 벽오차 평균을 75 cm로 끌어올림) — 저권한
+  하에서 온라인 적응의 안정성은 E5 본실험 전 점검 항목으로 이월. 나머지
+  4시드는 4,679–6,268로 nominal(5,568–7,149)보다 낫다.
+
 ```
 wallscan_controller ──/wallscan/u──▶ thrust_mapper ──/wallscan/current_cmd──▶ teleop(auto)
                                      (repo 소유: 순서·극성·k_i)              (CAN 소유 불변)
