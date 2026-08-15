@@ -93,6 +93,26 @@ Jetson이 데스크톱 대비 ~3× 느려도 p99 ≈ 24 ms로 경계선 — 초�
 BLASFEO 타깃 최적화. 완화를 쓰면 **같은 설정으로 e5 sim 셀을 재검증**해
 성능 열화를 확인할 것 (rti_iters/horizon은 config `옵션`으로 이미 노출).
 
+### 실측 결과 (2026-08-15)
+
+**Jetson 기본 설정 = 탈락**: nominal 37.30 ms mean / 53.22 p99, ssi 38.00 /
+54.20 — 예산 초과 100% (`bench_jetson.json`). 데스크톱 대비 ~6×. 병목은
+acados solve(35.4 ms)이고 SSI 오버헤드는 0.62 ms — 온라인 적응 비용은
+Jetson에서도 무시 가능(E4c의 핵심 결론은 유지).
+
+**완화 설정 sim 성능 검증 (e5_hwdrag_lat, go 조건 = 트림 상태, 5시드)**:
+
+| 설정 | nominal obj | ssi obj | cycles | 컨트롤(h30/rti8) 대비 |
+|---|--:|--:|--:|---|
+| rti4_h30 | 7,594 | 7,013 | 2.0 | nominal 동일(−0.0%); ssi는 s2 이상치 미재현으로 오히려 개선 |
+| rti4_h20 | 7,679 | 6,995 | 2.0 | nominal +1.1% — 무시 가능 |
+
+**둘 다 성능 무손실** (전 시드 cycles 2.0, 충돌 0, 벽오차 동일 ~17 cm).
+h30/rti8 ssi의 s2 이상치(40,955)가 rti4에선 ~13k로 재현되지 않은 점은 보너스
+(단일 관찰이라 과신 금지). → **배포 후보 = rti4_h20** (Jetson 예상 ~12 ms,
+p99 ~18); Jetson 재벤치(`--rti-iters 4 --horizon 20`)로 타이밍 확정만 남음.
+BLASFEO ARMv8 재빌드가 1.5× 이상 벌면 rti4_h30도 대안.
+
 ## 6. 남은 Jetson 절차 (이 문서 범위 밖)
 
 - 브리지/컨트롤러 노드 colcon build: `marinelab/ros/pkrc_wallscan_bridge/README.md`

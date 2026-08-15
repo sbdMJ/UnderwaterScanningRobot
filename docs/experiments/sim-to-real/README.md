@@ -34,6 +34,7 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | B-7 | **e5_hwdrag 재판정** (실측 항력 배율 주입, 20셀): B-6 no-go 번복 — **트림(납 1 kg) 조건부 go**. hwdrag_trim cycles 2.0 (5/5 시드, 충돌 0, nominal obj 7,595 / ssi 12,524*), 현상태 부력 +7.9 N은 cycles 0.0 (트림 필수를 sim이 독립 확인). heave 2× 보수 모델 기준이라 실기체는 여유. *ssi s2 이상치 — 저권한 온라인 적응 안정성은 E5 전 점검 이월 | `34014de` |
 | C-⑥ | **§4g 트림 세션** (2026-08-15, 납 0.5 kg): 평형 3.1→0.85 A 차분으로 **heave k = 0.99 N/A 실측 확정** (가정치의 59%; 27 s 자유 부양으로 검증) → B(트림 전) ≈ 4.7 N, heave d_eff ≈ 25로 정정 (전 축 20–25 수렴). auto 이탈 원인 = cmd pub 공백의 stale 복귀 (17_14 bag 무효 원인). 5 A 하강은 1.7 s auto 구간에서 0.14 m/s 하한 (τ 고려 시 0.22–0.33 외삽) — **0.85 m 수조에선 ≥0.2 직접 시연 불가, 본 탱크로 이월** | `047e7a5` |
 | D-① | **배포 plant 확정 + E4(c) 데스크톱**: `pkrc_plant_hw2026.json` (실측 종합; 테스트 2 추가) · `bench_inference.py` (isaaclab 무의존, 공유 코어째 계측) — 데스크톱 nominal 6.4 / ssi 6.5 ms (예산 20 ms, 초과 0%) · Jetson acados 빌드 절차 문서 | `c7f1c77` |
+| D-② | **E4(c) Jetson + 완화**: 기본 h30/rti8 = 37–38 ms 탈락(초과 100%, solve 지배·SSI 오버헤드 0.62 ms) → sim 검증 `e5_hwdrag_lat` 20셀에서 rti4_h20/h30 모두 무손실 (cycles 2.0, Δobj ≤ +1.1%; h30/rti8 ssi의 s2 이상치도 미재현) — **배포 후보 rti4_h20**, Jetson 재벤치만 남음 | `591a47f`, `dafa9d2` |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
@@ -92,7 +93,12 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
       공유 폐루프 코어 `WallScanControlLoop`째로 계측) + **데스크톱 절반 완료**:
       nominal total 6.36 ms (p99 7.78) / ssi 6.49 ms (p99 8.06, RFF+RK4 오버헤드
       0.38 ms) — 예산 20 ms의 1/3, 초과 0%. `experimental_results/e4_inference/`.
-- [ ] Jetson에서 벤치 재실행 → E4(c) 표 완성 (`--label jetson`)
+- [x] Jetson 벤치 1차: **기본 설정 탈락** — 37–38 ms/tick (p99 53–54), 초과 100%,
+      solve 지배(35.4 ms; SSI 오버헤드 0.62 ms뿐). `bench_jetson.json`
+- [x] 완화 설정 sim 재검증 (`e5_hwdrag_lat`, 20셀): **rti4_h20/rti4_h30 모두
+      성능 무손실** (cycles 2.0, nominal Δobj ≤ +1.1%) → 배포 후보 rti4_h20
+- [ ] Jetson 재벤치 `--rti-iters 4 --horizon 20` (예상 ~12 ms) → 배포 설정 확정
+      (+선택: BLASFEO ARMv8 재빌드로 rti4_h30 대안 타진)
 - [ ] Jetson에 marinelab 체크아웃 + 브리지/컨트롤러 노드 colcon build
       (절차: [`marinelab/ros/pkrc_wallscan_bridge/README.md`](../../../marinelab/ros/pkrc_wallscan_bridge/README.md))
 
