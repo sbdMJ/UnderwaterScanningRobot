@@ -41,3 +41,30 @@ def test_heave_roll_arms_match_the_bench_survey():
     B = np.asarray(PlantParams.from_json(_JSON).allocation_matrix)
     assert B[3, 4] == -0.1475, "u4 -> T5 (starboard, y = -0.1475)"
     assert B[3, 5] == +0.1475, "u5 -> T6 (port, y = +0.1475)"
+
+
+_JSON_HW = os.path.join(os.path.dirname(_JSON), "pkrc_plant_hw2026.json")
+
+
+def test_hw2026_export_carries_the_measured_field_values():
+    """2026-08-15 field calibration (thruster_mapping.md §4d/§4g): 0.5 kg lead trim,
+    measured drivetrain limit and per-axis drag scales (surge x0.175, sway x0.151,
+    heave x0.20 on both damping terms). TAM/added-mass/rotational damping inherit the
+    fixed-TAM export (unmeasured)."""
+    hw = PlantParams.from_json(_JSON_HW)
+    sim = PlantParams.from_json(_JSON)
+    assert hw.mass == np.float32(22.8) + 0.5, "0.5 kg lead ballast on the dry mass"
+    assert abs(hw.buoyancy_force - (hw.mass * 9.81 + 0.24)) < 1e-6, "+0.24 N measured residual"
+    assert hw.max_thrust == 3.68, "min k_i(limit_i - I0_i), binding T1 @ 3 A"
+    for i, s in enumerate((0.175, 0.151, 0.20)):
+        assert abs(hw.linear_damping[i] - sim.linear_damping[i] * s) < 1e-3
+        assert abs(hw.quadratic_damping[i] - sim.quadratic_damping[i] * s) < 1e-3
+    assert hw.linear_damping[3:] == sim.linear_damping[3:], "rotational drag unmeasured"
+    assert hw.allocation_matrix == sim.allocation_matrix, "TAM is the bench-verified one"
+
+
+def test_hw2026_round_trip_is_lossless(tmp_path):
+    prm = PlantParams.from_json(_JSON_HW)
+    out = tmp_path / "plant_hw.json"
+    prm.to_json(str(out))
+    assert dataclasses.asdict(PlantParams.from_json(str(out))) == dataclasses.asdict(prm)
