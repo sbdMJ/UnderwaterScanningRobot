@@ -1,0 +1,89 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.7991687655448914,
+  "tilt_sway_deg": 0.3146882951259613,
+  "tilt_deg": 0.7555019855499268,
+  "crab_deg": 2.391160726547241,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.16343371528930037,
+  "sway_speed_mps": 0.09813583473290652,
+  "heave_path_speed_mps": 0.16347437903808676,
+  "sway_path_speed_mps": 0.10153108369905266,
+  "heave_legs_scored": 3,
+  "sway_legs_scored": 4,
+  "wall_dist_err_cm": 11.803358048200607,
+  "cycles_mean": 2.0,
+  "cycles_per_env": [
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e5_hwdrag_lat",
+  "method": "ssi",
+  "cond": "rti4_h30",
+  "seed": 4,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "ukfm_theta": true,
+    "ukfm_max_depth": 7.0,
+    "max_thrust": 3.68,
+    "damping_scale_xyz": [
+      0.175,
+      0.151,
+      0.34
+    ],
+    "residual_buoyancy_n": -1.0,
+    "rti_iters": 4,
+    "tam": "fixed",
+    "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
+    "ssi_lr": 0.14733286466312384,
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 5.280195135868983,
+    "solve_ms_p95": 6.311367743182927,
+    "solve_ms_max": 113.73205401469022,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.9694444444444444
+  },
+  "score": {
+    "objective": 5203.726355524185,
+    "collided": false,
+    "scored_losses": [
+      5203.726355524185
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.02299955467098003,
+    "phi_rmse_deg": 1.9510334086363244,
+    "s_rmse_m": 0.08879460507761214
+  }
+}
