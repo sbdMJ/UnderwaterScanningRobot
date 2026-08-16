@@ -105,6 +105,14 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
       (절차: [`marinelab/ros/pkrc_wallscan_bridge/README.md`](../../../marinelab/ros/pkrc_wallscan_bridge/README.md))
 
 ### Phase E — 수조 실험 (E5 본실험)
+- [x] **시나리오 ② 체인 라이브니스 (2026-08-16, 소형 아크릴 수조, 마커리스) — 통과**:
+      전 노드 체인 50 Hz 락스텝, enable OFF 동안 u≡0, z 추정 = 0.85−압력심도와
+      cm 일치(손 이동 추종), DVL 드라이버 17 s 스톨도 rate-gate로 코스팅.
+      현장에서 잡은 배선 버그 4개 수정 반영(무발행 침묵 게이트 → 로그+블라인드
+      앵커, 센서 QoS BEST_EFFORT 매칭, 솔버 빌드 중 침묵, 매퍼 하트비트 부재로
+      auto 즉시 이탈). 마커리스 x/y는 예상대로 허구 — ③은 마커 필수.
+      `hw_bag_chain_liveness_20260816.py`
+- [ ] 시나리오 ③ depth-hold 폐루프 (소형 수조, 마커 리깅) — mj_ws README §9
 - [ ] 탱크-마커 캘리브레이션 측량 (`marker_x/y/yaw` 파라미터)
 - [ ] 마커 가시성 스캔 심도 전 구간 확인 (실측 한계 7 m 전제의 현장 검증)
 - [ ] 단계적 폐루프: depth-hold → wall-align → wallscan
