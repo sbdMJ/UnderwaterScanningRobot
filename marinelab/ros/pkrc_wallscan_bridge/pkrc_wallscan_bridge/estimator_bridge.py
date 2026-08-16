@@ -93,16 +93,23 @@ class EstimatorBridge(Node):
         except ImportError as e:  # pragma: no cover - build-environment error
             raise SystemExit("dvl_msgs not built in this workspace (colcon build dvl_msgs)") from e
 
-        self.create_subscription(DVL, "/dvl/data", self._on_dvl, 10)
-        self.create_subscription(Imu, "/imu/data", self._on_imu, 50)
-        self.create_subscription(Float64, "/bar10xt/depth", self._on_depth, 10)
+        # Sensor QoS: the hero_ws drivers publish BEST_EFFORT (measured in the 2026-08
+        # bags: /bar10xt/depth and /dvl/data reliability=2, /imu/data reliable) — a
+        # default RELIABLE subscription never matches a BEST_EFFORT publisher, so the
+        # node sat waiting on dvl/depth forever (field finding, 2026-08-16). A
+        # best-effort subscriber matches BOTH kinds of publisher; use it for all inputs.
+        from rclpy.qos import qos_profile_sensor_data as sensor_qos
+
+        self.create_subscription(DVL, "/dvl/data", self._on_dvl, sensor_qos)
+        self.create_subscription(Imu, "/imu/data", self._on_imu, sensor_qos)
+        self.create_subscription(Float64, "/bar10xt/depth", self._on_depth, sensor_qos)
         if str(g("wall_msg")) == "range":
             from sensor_msgs.msg import Range
 
-            self.create_subscription(Range, str(g("wall_topic")), self._on_wall_range, 10)
+            self.create_subscription(Range, str(g("wall_topic")), self._on_wall_range, sensor_qos)
         else:
-            self.create_subscription(Float32, str(g("wall_topic")), self._on_wall, 10)
-        self.create_subscription(Odometry, "/ukfm/odom_validated", self._on_ukfm, 10)
+            self.create_subscription(Float32, str(g("wall_topic")), self._on_wall, sensor_qos)
+        self.create_subscription(Odometry, "/ukfm/odom_validated", self._on_ukfm, sensor_qos)
 
         self.pub_state = self.create_publisher(Odometry, "/wallscan/state", 10)
         self.pub_debug = self.create_publisher(Float64MultiArray, "/wallscan/estimator_debug", 10)
