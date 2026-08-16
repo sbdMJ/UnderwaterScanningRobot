@@ -223,6 +223,56 @@ T2와 절차는 ③ 본문과 동일 (Z_HOLD 읽어서 z_top=z_bottom, sway_step
 수평 명령이 허구를 쫓아 커지는 모습 자체가 "마커가 왜 필요한가"의 기록이
 된다. 마커 리깅이 되는 날 ③ 본문(수평 1.5 A)으로 승격.
 
+#### 터미널별 상세 (마커리스 depth-hold 세션 전체, 순서대로)
+
+모든 mj_ws 터미널(T1–T3)의 공통 서두 — 한 줄이라도 빠지면 각각 다른 방식으로
+죽거나 침묵한다 (hero_ws 없으면 dvl_msgs ImportError, ACADOS 없으면 T2
+ImportError):
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/hero_ws/install/setup.bash
+source ~/mj_ws/install/setup.bash
+export MARINELAB_ROOT=~/mj_ws/marinelab
+export ACADOS_SOURCE_DIR=$HOME/acados
+export LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRARY_PATH
+```
+
+- **T0 (hero_ws 센서, 평소 bringup 그대로)**: IMU + bar10xt + **DVL 드라이버
+  필수** (아크릴이라 락은 없어도 드라이버는 떠 있어야 estimator가 발행 시작).
+  체크: `ros2 topic hz /imu/data /bar10xt/depth /dvl/data` — dvl은 끊겼다
+  이어져도 됨(②에서 17 s 스톨 코스팅 확인).
+- **T1 (estimator)**: 위 §③-마커리스의 T1 명령. 기대 로그 순서:
+  `waiting for first message on: ...`(센서 대기) → `BLIND anchor at r=4.50`
+  (1회 WARN) → 이후 침묵 = 발행 중. 체크: `ros2 topic hz /wallscan/state` ≈ 50.
+- **T3 (mapper)**: 위 §③-마커리스의 T3 명령 (수평 데드존 클램프!). 기대:
+  `thrust mapper up [CALIBRATED]` 즉시, `/wallscan/current_cmd` 5 Hz 0 발행.
+  T2보다 먼저 켜두면 teleop auto가 빌드 중에도 유지된다.
+- **T2 (controller)**: 로봇을 목표 심도(수면 아래 ~0.4 m)에 손으로 잡고 T5에서
+  `ros2 topic echo --once /wallscan/state --field pose.pose.position.z` → 값
+  Z_HOLD 메모 → ③ 본문 T2 명령에 `z_top:=Z_HOLD z_bottom:=Z_HOLD
+  sway_step:=0.0`. 기대 로그: `building acados solver ...`(첫 회 수 분;
+  5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후 재시작) →
+  `wallscan controller up ... (enable via /wallscan/enable)`. 이후
+  `/wallscan/u`·current_cmd 50 Hz.
+- **T4 (teleop — mj_ws 것, hero_ws teleop은 종료)**: `ros2 run pkrc_control
+  keyboard_control_teleop` → `g` → `WALLSCAN AUTO ON` 로그. current_cmd
+  하트비트 덕에 수동 복귀 없이 유지되는지 10 s 관찰. **이 터미널이 비상정지
+  (아무 키)** — 세션 내내 손 닿는 곳에.
+- **T5 (기록/명령)**: ① §8의 record 목록 + `/wallscan/enable`로 bag 시작 →
+  ② 로봇 목표 심도 근처에서 손 놓기 → ③
+  `ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: true}"` →
+  T2 로그 `scan enabled: anchored at z=...` 확인 → ④ 30 s 관찰
+  (심도 ±10 cm·heave 전류 0.7–1.5 A 기대; 3 A 포화 왕복이면 OFF) → ⑤
+  `"{data: false}"` → 이상 없으면 재-enable로 2–3분 + 10 cm 눌렀다 놓기
+  복원 시험 → ⑥ bag 종료.
+
+이상 징후별 1차 대응: state 안 나옴 → T1 로그(무엇을 기다리는지 말해줌);
+u 안 나옴 → T2가 아직 빌드 중이거나 state 미수신(`state stream stale` 경고);
+auto가 자꾸 풀림 → current_cmd 발행 확인(T3 하트비트) + 키보드 접촉;
+enable 후 무반응 → T2 `scan enabled` 로그 유무와 controller_debug의
+enabled 플래그 확인.
+
 **안전 수칙 (소형 수조 필수)**:
 - enable은 짧게 (첫 시도 ≤30 s), 심도 0.2 m 이탈·과도 수평 이동 시 즉시 OFF.
 - z_top/z_bottom을 수조 심도(0.85 m)보다 깊게 두지 말 것 — 기본값 그대로
