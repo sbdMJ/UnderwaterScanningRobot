@@ -196,10 +196,35 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
    heave 쌍 위주로 0.7–1.5 A 근방, 수평 전류가 지속 편향이면 마커 배치 문제.
 4. 종료: `"{data: false}"` 발행 또는 **teleop 아무 키 (최종 비상정지)**.
 
+### ③-마커리스 변형 — depth-hold 전용 (마커 리깅 불가 시)
+
+x/y/s가 허구(②에서 실측: 정지 중 1–2 cm/s 표류)라 컨트롤러가 수평으로
+허깨비를 쫓는다 → **수평 4개의 amps_limit을 데드존 전류로 클램프해 수평
+추력을 물리적으로 0으로** 만들고 (I ≤ I₀ ⇒ F=0), heave만 살린다. 깊이
+루프(병목 축)는 온전히 시험된다. 바뀌는 것:
+
+```bash
+# T1: ②와 동일하게 anchor_without_fix:=true 유지 (wall/마커 없음)
+ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p tank_height:=0.85 -p tank_radius:=6.0 \
+  -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0 \
+  -p anchor_without_fix:=true
+# T3: 수평 = 데드존 클램프 (추력 0), heave만 3 A
+ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
+  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
+  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
+  -p amps_limit:="[0.69,0.69,0.76,0.76,3.0,3.0]"
+```
+
+T2와 절차는 ③ 본문과 동일 (Z_HOLD 읽어서 z_top=z_bottom, sway_step 0).
+관찰 대상은 **z hold 품질만**: 유지 정밀도(±cm), heave 전류 패턴
+(평형 ~0.85 A 근방 + 보정), 손으로 10 cm 눌렀다 놓을 때 복원. 수평/요는
+전류가 데드존이라 아무 일도 안 일어나는 게 정상이고, current_cmd에 찍히는
+수평 명령이 허구를 쫓아 커지는 모습 자체가 "마커가 왜 필요한가"의 기록이
+된다. 마커 리깅이 되는 날 ③ 본문(수평 1.5 A)으로 승격.
+
 **안전 수칙 (소형 수조 필수)**:
 - enable은 짧게 (첫 시도 ≤30 s), 심도 0.2 m 이탈·과도 수평 이동 시 즉시 OFF.
-- 마커 없이도 시도는 가능하나 (fix 없음 → 위치는 추측항법 드리프트) 수평
-  전류가 드리프트를 쫓아간다 — 그 경우 amps_limit 수평을 1.0 A까지 내릴 것.
 - z_top/z_bottom을 수조 심도(0.85 m)보다 깊게 두지 말 것 — 기본값 그대로
   켜면 z_bottom=1.0을 찾아 바닥으로 파고든다.
 - 트림 상태 확인: 이 plant JSON은 납 0.5 kg 장착(+0.24 N) 기준 — 납을 뗀
