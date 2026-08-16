@@ -238,34 +238,80 @@ export ACADOS_SOURCE_DIR=$HOME/acados
 export LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRARY_PATH
 ```
 
-- **T0 (hero_ws 센서, 평소 bringup 그대로)**: IMU + bar10xt + **DVL 드라이버
-  필수** (아크릴이라 락은 없어도 드라이버는 떠 있어야 estimator가 발행 시작).
-  체크: `ros2 topic hz /imu/data /bar10xt/depth /dvl/data` — dvl은 끊겼다
-  이어져도 됨(②에서 17 s 스톨 코스팅 확인).
-- **T1 (estimator)**: 위 §③-마커리스의 T1 명령. 기대 로그 순서:
-  `waiting for first message on: ...`(센서 대기) → `BLIND anchor at r=4.50`
-  (1회 WARN) → 이후 침묵 = 발행 중. 체크: `ros2 topic hz /wallscan/state` ≈ 50.
-- **T3 (mapper)**: 위 §③-마커리스의 T3 명령 (수평 데드존 클램프!). 기대:
-  `thrust mapper up [CALIBRATED]` 즉시, `/wallscan/current_cmd` 5 Hz 0 발행.
-  T2보다 먼저 켜두면 teleop auto가 빌드 중에도 유지된다.
-- **T2 (controller)**: 로봇을 목표 심도(수면 아래 ~0.4 m)에 손으로 잡고 T5에서
-  `ros2 topic echo --once /wallscan/state --field pose.pose.position.z` → 값
-  Z_HOLD 메모 → ③ 본문 T2 명령에 `z_top:=Z_HOLD z_bottom:=Z_HOLD
-  sway_step:=0.0`. 기대 로그: `building acados solver ...`(첫 회 수 분;
-  5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후 재시작) →
-  `wallscan controller up ... (enable via /wallscan/enable)`. 이후
-  `/wallscan/u`·current_cmd 50 Hz.
-- **T4 (teleop — mj_ws 것, hero_ws teleop은 종료)**: `ros2 run pkrc_control
-  keyboard_control_teleop` → `g` → `WALLSCAN AUTO ON` 로그. current_cmd
-  하트비트 덕에 수동 복귀 없이 유지되는지 10 s 관찰. **이 터미널이 비상정지
-  (아무 키)** — 세션 내내 손 닿는 곳에.
-- **T5 (기록/명령)**: ① §8의 record 목록 + `/wallscan/enable`로 bag 시작 →
-  ② 로봇 목표 심도 근처에서 손 놓기 → ③
-  `ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: true}"` →
-  T2 로그 `scan enabled: anchored at z=...` 확인 → ④ 30 s 관찰
-  (심도 ±10 cm·heave 전류 0.7–1.5 A 기대; 3 A 포화 왕복이면 OFF) → ⑤
-  `"{data: false}"` → 이상 없으면 재-enable로 2–3분 + 10 cm 눌렀다 놓기
-  복원 시험 → ⑥ bag 종료.
+**T0 (hero_ws 센서, 평소 bringup 그대로)**: IMU + bar10xt + **DVL 드라이버
+필수** (아크릴이라 락은 없어도 드라이버는 떠 있어야 estimator가 발행 시작).
+
+```bash
+ros2 topic hz /imu/data /bar10xt/depth /dvl/data   # dvl은 끊겼다 이어져도 OK
+```
+
+**T1 (estimator)** — 공통 서두 후:
+
+```bash
+ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p tank_height:=0.85 -p tank_radius:=6.0 \
+  -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0 \
+  -p anchor_without_fix:=true
+```
+
+기대 로그: `waiting for first message on: ...` → `BLIND anchor at r=4.50`
+(1회 WARN) → 이후 침묵 = 발행 중. 체크: `ros2 topic hz /wallscan/state` ≈ 50.
+
+**T3 (mapper — T2보다 먼저: auto 유지용 하트비트)** — 공통 서두 후:
+
+```bash
+ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
+  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
+  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
+  -p amps_limit:="[0.69,0.69,0.76,0.76,3.0,3.0]"   # ★ 수평 = 데드존 = 추력 0
+```
+
+기대: `thrust mapper up [CALIBRATED]` 즉시 + `/wallscan/current_cmd` 5 Hz 0.
+
+**T2 (controller)** — 먼저 로봇을 목표 심도(수면 아래 ~0.4 m)에 손으로 잡고
+T5에서 Z_HOLD를 읽는다:
+
+```bash
+ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HOLD
+```
+
+공통 서두 후 (Z_HOLD를 읽은 값으로 치환):
+
+```bash
+ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
+  -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
+  -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0
+```
+
+기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시
+`rm -rf ~/.cache/wallscan_acados` 후 재시작) → `wallscan controller up ...`
+→ `/wallscan/u`·current_cmd 50 Hz.
+
+**T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
+
+```bash
+source /opt/ros/humble/setup.bash && source ~/mj_ws/install/setup.bash
+ros2 run pkrc_control keyboard_control_teleop
+```
+
+`g` → `WALLSCAN AUTO ON` 로그, 10 s쯤 수동 복귀 없이 유지되는지 관찰.
+**이 터미널이 비상정지 (아무 키)** — 세션 내내 손 닿는 곳에.
+
+**T5 (기록/명령)**:
+
+```bash
+# ① bag 시작
+ros2 bag record /wallscan/state /wallscan/estimator_debug /wallscan/u \
+  /wallscan/current_cmd /wallscan/controller_debug /wallscan/enable \
+  /teleop/thruster_currents /bar10xt/depth /imu/data /dvl/data
+# ② 로봇을 목표 심도 근처에서 손 놓기 → ③ 폐루프 ON
+ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: true}"
+#    → T2 로그 "scan enabled: anchored at z=..." 확인
+# ④ 30 s 관찰: 심도 ±10 cm, heave 전류 0.7–1.5 A 기대 (3 A 포화 왕복이면 즉시 OFF)
+ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: false}"   # ⑤ OFF
+# ⑥ 정상이면 재-enable 2–3분 + 손으로 10 cm 눌렀다 놓기(복원 응답) → bag 종료
+```
 
 이상 징후별 1차 대응: state 안 나옴 → T1 로그(무엇을 기다리는지 말해줌);
 u 안 나옴 → T2가 아직 빌드 중이거나 state 미수신(`state stream stale` 경고);
