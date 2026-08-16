@@ -70,6 +70,12 @@ class EstimatorBridge(Node):
         p("wall_topic", "/ukfm/wall_distance")
         p("wall_msg", "float32")  # "float32" | "range"
         p("stale_warn_s", 1.0)
+        # Marker-less liveness (small-pool scenario 2): anchor the filter blind instead
+        # of waiting for the first /ukfm/odom_validated fix. Absolute x/y/s are then
+        # dead-reckoned fiction until a real fix arrives — NEVER use for closed loop
+        # unless the marker frame is rigged (scenario 3 needs the marker).
+        p("anchor_without_fix", False)
+        p("anchor_r0", 4.5)  # blind-anchor radius, R - d_ref
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         self.calib = TankCalib(
@@ -139,11 +145,25 @@ class EstimatorBridge(Node):
         now = self._now()
         sample = self.asm.assemble(now)
         if sample is None:
+            self.get_logger().warning(
+                f"no /wallscan/state yet — waiting for first message on: "
+                f"{', '.join(self.asm.missing())}", throttle_duration_sec=5.0)
             return
         if not self.initialized:
-            if sample.ukfm is None:
-                return  # wait for the first validated marker fix to anchor the filter
-            r0, phi0, theta0 = sample.ukfm
+            if sample.ukfm is not None:
+                r0, phi0, theta0 = sample.ukfm
+            elif bool(self.get_parameter("anchor_without_fix").value):
+                r0 = float(self.get_parameter("anchor_r0").value)
+                phi0, theta0 = 0.0, 0.0
+                self.get_logger().warning(
+                    f"BLIND anchor at r={r0:.2f} (anchor_without_fix) — absolute x/y/s "
+                    "are dead-reckoned fiction until a validated marker fix arrives")
+            else:
+                self.get_logger().warning(
+                    "prediction inputs OK — waiting for the first validated marker fix "
+                    "(/ukfm/odom_validated) to anchor; for marker-less liveness set "
+                    "-p anchor_without_fix:=true", throttle_duration_sec=5.0)
+                return
             self.est.reset(r0=r0, phi0=phi0, theta0=theta0)
             self.initialized = True
             self.get_logger().info(

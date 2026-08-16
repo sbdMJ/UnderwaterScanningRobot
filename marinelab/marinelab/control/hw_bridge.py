@@ -105,6 +105,12 @@ class TopicSampleAssembler:
     def ready(self) -> bool:
         return self._dvl is not None and self._imu is not None and self._z is not None
 
+    def missing(self) -> tuple[str, ...]:
+        """Prediction inputs not yet received — the node's why-am-I-silent telemetry."""
+        return tuple(name for name, v in
+                     (("dvl", self._dvl), ("imu", self._imu), ("depth", self._z))
+                     if v is None)
+
     def ages(self, now: float) -> dict[str, float]:
         """Seconds since each channel's last message — the node's health telemetry."""
         return {k: now - t for k, t in self._age.items()}

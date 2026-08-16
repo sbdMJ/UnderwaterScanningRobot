@@ -21,11 +21,14 @@ def _feed_prediction_inputs(a: TopicSampleAssembler, t: float = 0.0) -> None:
 def test_not_ready_until_every_prediction_input_arrived():
     a = TopicSampleAssembler()
     assert a.assemble(0.0) is None
+    assert a.missing() == ("dvl", "imu", "depth")
     a.feed_dvl(0.1, 0.0, 0.0, 0.0)
     a.feed_imu(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     assert a.assemble(0.0) is None, "depth still missing"
+    assert a.missing() == ("depth",), "the node's why-am-I-silent log names the holdout"
     a.feed_depth(3.0, 0.0)
     assert a.assemble(0.0) is not None
+    assert a.missing() == ()
 
 
 def test_measurements_are_consumed_once_and_prediction_inputs_hold():

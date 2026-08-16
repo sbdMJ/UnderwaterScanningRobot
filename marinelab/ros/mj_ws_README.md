@@ -125,11 +125,17 @@ export MARINELAB_ROOT=~/mj_ws/marinelab
 export ACADOS_SOURCE_DIR=$HOME/acados LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRARY_PATH
 
 # T1: estimator (소형 수조 = 아크릴: DVL·/ukfm/wall_distance 사망 → Ping1D로 대체)
+# 발행 전제 2가지 — 로그가 무엇을 기다리는지 말해준다:
+#   (a) DVL·IMU·깊이 첫 메시지 (아크릴이라도 DVL "드라이버"는 떠 있어야 함 —
+#       락 없이도 메시지는 나온다), (b) 첫 마커 fix 앵커. 마커 없이 라이브니스만
+#       볼 때는 anchor_without_fix:=true (블라인드 앵커 — x/y/s는 fix 전까지 허구,
+#       폐루프(③) 금지).
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=0.0 -p marker_y:=0.0 -p marker_yaw:=0.0 \
-  -p wall_topic:=/sensor/sonar/ping1d/range -p wall_msg:=range
-# 본 탱크에서는 wall_topic/wall_msg 생략(기본 = DVL 전방 고도) + tank_height:=10.0
+  -p wall_topic:=/sensor/sonar/ping1d/range -p wall_msg:=range \
+  -p anchor_without_fix:=true
+# 본 탱크에서는 wall_topic/wall_msg/anchor_without_fix 생략 + tank_height:=10.0
 
 # T2: 컨트롤러 (enable 기본 OFF — u는 계산되지만 0으로 게이트; 기본 h20/rti4 =
 #     E4c 배포 설정. 첫 실행은 acados 코드젠 수십 초 — ~/.cache/wallscan_acados)
