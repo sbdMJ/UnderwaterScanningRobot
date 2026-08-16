@@ -117,16 +117,22 @@ hero_ws 센서 스택(+ 소형 아크릴 수조면 `ping1d_sonar` 드라이버�
 mj_ws 터미널 3개:
 
 ```bash
-# T1: estimator (소형 수조 = 아크릴: DVL·/ukfm/wall_distance 사망 → Ping1D로 대체)
-source /opt/ros/humble/setup.bash && source ~/mj_ws/install/setup.bash
+# 브리지 터미널 공통 (T1~T3): hero_ws를 먼저 source (dvl_msgs 런타임 import),
+# 그 위에 mj_ws. acados 환경변수는 T2에 필수 (~/.bashrc에 넣었다면 생략).
+source /opt/ros/humble/setup.bash
+source ~/hero_ws/install/setup.bash && source ~/mj_ws/install/setup.bash
 export MARINELAB_ROOT=~/mj_ws/marinelab
+export ACADOS_SOURCE_DIR=$HOME/acados LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRARY_PATH
+
+# T1: estimator (소형 수조 = 아크릴: DVL·/ukfm/wall_distance 사망 → Ping1D로 대체)
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=0.0 -p marker_y:=0.0 -p marker_yaw:=0.0 \
   -p wall_topic:=/sensor/sonar/ping1d/range -p wall_msg:=range
 # 본 탱크에서는 wall_topic/wall_msg 생략(기본 = DVL 전방 고도) + tank_height:=10.0
 
-# T2: 컨트롤러 (enable 기본 OFF — u는 계산되지만 0으로 게이트)
+# T2: 컨트롤러 (enable 기본 OFF — u는 계산되지만 0으로 게이트; 기본 h20/rti4 =
+#     E4c 배포 설정. 첫 실행은 acados 코드젠 수십 초 — ~/.cache/wallscan_acados)
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json
@@ -146,24 +152,49 @@ teleop(§3)을 auto로 두고 확인할 것: `/wallscan/state` 50 Hz /
 
 ## 9. 시나리오 ③ — depth-hold 폐루프 (물, 소형 수조 가능)
 
-②의 T2만 파라미터를 바꿔 스테이션 키핑으로: 스캔 컬럼을 현재 심도 한 점으로
-붕괴시키고(sway 0) 컨트롤러가 깊이+자세만 잡게 한다.
+②에서 T1·T2만 바꾼다. 스캔 컬럼을 현재 심도 한 점으로 붕괴시키고(sway 0)
+컨트롤러가 깊이+자세(+마커가 있으면 위치)만 잡게 한다.
 
 ```bash
+# T1: estimator — ③에서는 wall_topic을 기본(사망 토픽)으로 되돌린다.
+# 이유: 소형 수조의 실제 벽거리(≪1.5 m)를 소나로 먹이면 가상 원통(R=6,
+# d_ref=1.5) 기하와 충돌해 혁신이 마커 fix와 싸운다. 소나 없이 마커+깊이로만.
+ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p tank_height:=0.85 -p tank_radius:=6.0 \
+  -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0
+# marker_x=4.5: 마커 바로 아래가 가상 탱크의 r=4.5(=R−d_ref) 지점이 되게 —
+# 컨트롤러의 "벽거리 1.5 m" 목표가 현 위치에서 이미 충족되도록. 마커의 x축을
+# 로봇 초기 기수 방향과 맞춰 붙이면 marker_yaw:=0으로 충분.
+
+# T2: 컨트롤러 — 스캔 컬럼 붕괴. Z_HOLD는 아래 절차에서 읽은 값.
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
-  -p z_top:=0.45 -p z_bottom:=0.45 -p sway_step:=0.0
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0
+
+# T3: 매퍼 — 소형 수조에서는 amps_limit로 권한 자체를 줄인다 (안전 노브)
+ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
+  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
+  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
+  -p amps_limit:="[1.5,1.5,1.5,1.5,3.0,3.0]"
 ```
 
-절차: 로봇을 중앙 ~0.45 m 심도에 두고 → `ros2 topic pub -1 /wallscan/enable
-std_msgs/msg/Bool "{data: true}"` (상승엣지에 현재 심도로 재앵커) → 관찰 →
-`data: false` 또는 teleop 아무 키로 즉시 회수.
+절차:
+1. 로봇을 수조 중앙, 목표 심도(~수면 아래 0.4 m)에 손으로 잡고
+   `ros2 topic echo --once /wallscan/state --field pose.pose.position.z`
+   → 그 값을 `Z_HOLD`로 T2 재시작 (앵커는 enable 엣지가 다시 잡지만,
+   z_top=z_bottom이 현재 z와 같아야 램프가 0이 된다).
+2. teleop auto ON (`g`), 손 놓고 →
+   `ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: true}"`.
+3. 관찰 (첫 시도 ≤30 s): 심도 유지 ±10 cm, 전류 `/teleop/thruster_currents`가
+   heave 쌍 위주로 0.7–1.5 A 근방, 수평 전류가 지속 편향이면 마커 배치 문제.
+4. 종료: `"{data: false}"` 발행 또는 **teleop 아무 키 (최종 비상정지)**.
 
 **안전 수칙 (소형 수조 필수)**:
-- 컨트롤러는 벽거리 1.5 m도 잡으려 한다 — 마커 프레임을 현재 위치가 가상
-  탱크의 r≈4.5 m가 되게 놓지 않으면 수평으로 기어간다. 마커를 못 놓으면
-  **teleop max_current를 낮춰**(1–1.5 A) 수평 권한 자체를 줄이고 테더 대기.
 - enable은 짧게 (첫 시도 ≤30 s), 심도 0.2 m 이탈·과도 수평 이동 시 즉시 OFF.
+- 마커 없이도 시도는 가능하나 (fix 없음 → 위치는 추측항법 드리프트) 수평
+  전류가 드리프트를 쫓아간다 — 그 경우 amps_limit 수평을 1.0 A까지 내릴 것.
 - z_top/z_bottom을 수조 심도(0.85 m)보다 깊게 두지 말 것 — 기본값 그대로
   켜면 z_bottom=1.0을 찾아 바닥으로 파고든다.
+- 트림 상태 확인: 이 plant JSON은 납 0.5 kg 장착(+0.24 N) 기준 — 납을 뗀
+  로봇(+4.7 N)이면 heave 평형 전류가 3 A대로 올라가 hold가 더 거칠어진다.
