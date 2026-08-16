@@ -121,6 +121,11 @@ class WallScanControllerNode(Node):
             sway_step=float(g("sway_step")), ref_step=float(g("ref_step")),
             ref_step_s=float(g("ref_step_s")), step_dt=float(g("step_dt")),
             dt_mpc=float(g("dt_mpc")))
+        self.get_logger().info(
+            f"building acados solver: method={g('method')!r} horizon={g('horizon')} "
+            f"rti={g('rti_iters')} — FIRST run generates+compiles C code into "
+            f"{g('code_export_root')} (minutes on the Jetson; stuck >5 min -> delete "
+            "that dir and restart)")
         ctl = _build_controller(self, str(g("method")), plant, mpc_cfg,
                                 int(g("horizon")), int(g("rti_iters")),
                                 str(g("code_export_root")))

@@ -69,7 +69,11 @@ class ThrustMapper(Node):
         self.pub.publish(out)
 
     def _watchdog(self) -> None:
-        if self._last_rx is not None and self._now() - self._last_rx > self.stale_zero:
+        # Assert zero current whenever /wallscan/u is stale — INCLUDING before the first
+        # u ever arrives (field finding 2026-08-16: without this the current_cmd stream
+        # doesn't exist while the controller compiles its solver, so teleop auto drops
+        # back to manual 0.5 s after 'g'). 5 Hz zeros keep auto engaged and harmless.
+        if self._last_rx is None or self._now() - self._last_rx > self.stale_zero:
             out = Float64MultiArray()
             out.data = [0.0] * 6
             self.pub.publish(out)
