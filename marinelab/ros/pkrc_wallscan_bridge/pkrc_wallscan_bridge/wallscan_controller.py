@@ -89,7 +89,11 @@ class WallScanControllerNode(Node):
         p("ssi_lr", 0.14733286466312384)          # adopted ssi attempt-2 trial 87
         p("ssi_kernel_std", 0.18398034704266503)
         p("ssi_n_rf", 100), p("ssi_seed", 0)
-        p("horizon", 30), p("rti_iters", 8), p("step_dt", 0.02)
+        # horizon 20 / RTI 4 = the validated DEPLOY setting (E4c 2026-08-16): on the
+        # Jetson the sim default h30/rti8 takes 37-38 ms vs the 20 ms tick — h20/rti4
+        # runs 15.6-16.2 ms (p99 20.7, <=4.4% soft overruns) and is performance-lossless
+        # in sim (e5_hwdrag_lat: cycles 2.0, nominal dobj <= +1.1% over 5 seeds).
+        p("horizon", 20), p("rti_iters", 4), p("step_dt", 0.02)
         p("code_export_root", os.path.expanduser("~/.cache/wallscan_acados"))
         # Stage3 scan/reference parameters (wallscan_env_cfg) — override per tank.
         p("tank_radius", 6.0), p("d_ref", 1.5)

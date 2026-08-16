@@ -113,6 +113,24 @@ h30/rti8 ssi의 s2 이상치(40,955)가 rti4에선 ~13k로 재현되지 않은 �
 p99 ~18); Jetson 재벤치(`--rti-iters 4 --horizon 20`)로 타이밍 확정만 남음.
 BLASFEO ARMv8 재빌드가 1.5× 이상 벌면 rti4_h30도 대안.
 
+### E4(c) 최종 표 (2026-08-16 Jetson 재벤치로 확정)
+
+| 플랫폼 | 설정 | nominal total mean/p99 [ms] | ssi | SSI 오버헤드 | 초과율 |
+|---|---|--:|--:|--:|--:|
+| 데스크톱 (x86, 컨테이너) | h30/rti8 | 6.36 / 7.78 | 6.49 / 8.06 | 0.38 | 0% |
+| Jetson (aarch64) | h30/rti8 | 37.30 / 53.22 | 38.00 / 54.20 | 0.62 | 100% |
+| Jetson | h30/rti4 (+ARMv8 재빌드) | 19.88 / 25.06 | 20.53 / 26.00 | 0.61 | 9–76% |
+| **Jetson (배포)** | **h20/rti4** | **15.57 / 20.65** | **16.15 / 20.73** | 0.59 | **1.3% / 4.4%** |
+
+- **배포 설정 = horizon 20 / RTI 4 확정** — `wallscan_controller` 노드 기본값으로
+  반영 (sim 성능 무손실은 위 e5_hwdrag_lat로 검증). p99가 예산을 ≤0.7 ms 스치는
+  1~4%의 소프트 초과는 허용 (하드 데드라인 없음 — 늦은 틱은 다음 발행으로 밀리고
+  teleop 램프·stale 경로가 흡수).
+- **BLASFEO ARMv8 타깃은 무효과** (h30/rti4 solve 18.1 ms ≈ GENERIC 외삽 17.7)
+  — 이 문제 크기에서는 타깃 튜닝으로 얻을 게 없다. GENERIC 유지.
+- E4(c) 논거 완성: SSI의 온라인 적응 비용은 Jetson에서도 **0.6 ms/틱** —
+  적응성은 사실상 공짜이고, 예산을 결정하는 것은 NMPC 공통 비용뿐.
+
 ## 6. 남은 Jetson 절차 (이 문서 범위 밖)
 
 - 브리지/컨트롤러 노드 colcon build: `marinelab/ros/pkrc_wallscan_bridge/README.md`

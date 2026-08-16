@@ -35,6 +35,7 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | C-⑥ | **§4g 트림 세션** (2026-08-15, 납 0.5 kg): 평형 3.1→0.85 A 차분으로 **heave k = 0.99 N/A 실측 확정** (가정치의 59%; 27 s 자유 부양으로 검증) → B(트림 전) ≈ 4.7 N, heave d_eff ≈ 25로 정정 (전 축 20–25 수렴). auto 이탈 원인 = cmd pub 공백의 stale 복귀 (17_14 bag 무효 원인). 5 A 하강은 1.7 s auto 구간에서 0.14 m/s 하한 (τ 고려 시 0.22–0.33 외삽) — **0.85 m 수조에선 ≥0.2 직접 시연 불가, 본 탱크로 이월** | `047e7a5` |
 | D-① | **배포 plant 확정 + E4(c) 데스크톱**: `pkrc_plant_hw2026.json` (실측 종합; 테스트 2 추가) · `bench_inference.py` (isaaclab 무의존, 공유 코어째 계측) — 데스크톱 nominal 6.4 / ssi 6.5 ms (예산 20 ms, 초과 0%) · Jetson acados 빌드 절차 문서 | `c7f1c77` |
 | D-② | **E4(c) Jetson + 완화**: 기본 h30/rti8 = 37–38 ms 탈락(초과 100%, solve 지배·SSI 오버헤드 0.62 ms) → sim 검증 `e5_hwdrag_lat` 20셀에서 rti4_h20/h30 모두 무손실 (cycles 2.0, Δobj ≤ +1.1%; h30/rti8 ssi의 s2 이상치도 미재현) — **배포 후보 rti4_h20**, Jetson 재벤치만 남음 | `591a47f`, `dafa9d2` |
+| D-③ | **E4(c) 완성 + 배포 설정 확정**: Jetson h20/rti4 = 15.6–16.2 ms (p99 20.7, 초과 1.3–4.4% 허용) — 노드 기본값을 h20/rti4로 변경. ARMv8 BLASFEO 무효과 확인. SSI 적응 비용 0.6 ms/틱 = 사실상 공짜 (E4c 핵심 논거) | (this) |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
@@ -97,8 +98,9 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
       solve 지배(35.4 ms; SSI 오버헤드 0.62 ms뿐). `bench_jetson.json`
 - [x] 완화 설정 sim 재검증 (`e5_hwdrag_lat`, 20셀): **rti4_h20/rti4_h30 모두
       성능 무손실** (cycles 2.0, nominal Δobj ≤ +1.1%) → 배포 후보 rti4_h20
-- [ ] Jetson 재벤치 `--rti-iters 4 --horizon 20` (예상 ~12 ms) → 배포 설정 확정
-      (+선택: BLASFEO ARMv8 재빌드로 rti4_h30 대안 타진)
+- [x] Jetson 재벤치 (2026-08-16): **h20/rti4 = 15.6–16.2 ms (p99 20.7, 초과 ≤4.4%)
+      → 배포 설정 확정**, 노드 기본값 반영. ARMv8 재빌드는 무효과 (h30/rti4
+      19.9–20.5 ms, 탈락) — E4(c) 표 완성 (`jetson_acados_build.md` §5)
 - [ ] Jetson에 marinelab 체크아웃 + 브리지/컨트롤러 노드 colcon build
       (절차: [`marinelab/ros/pkrc_wallscan_bridge/README.md`](../../../marinelab/ros/pkrc_wallscan_bridge/README.md))
 
