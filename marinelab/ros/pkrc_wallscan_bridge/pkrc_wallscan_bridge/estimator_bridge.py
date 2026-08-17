@@ -35,6 +35,7 @@ from .marinelab_loader import load_marinelab
 
 load_marinelab()
 
+import numpy as np  # noqa: E402
 import rclpy  # noqa: E402
 from nav_msgs.msg import Odometry  # noqa: E402
 from rclpy.node import Node  # noqa: E402
@@ -44,6 +45,23 @@ from std_msgs.msg import Float32, Float64, Float64MultiArray  # noqa: E402
 from marinelab.control.estimator import WallFrameStateEstimator  # noqa: E402
 from marinelab.control.hw_bridge import TankCalib, TopicSampleAssembler  # noqa: E402
 from marinelab.tasks.pkrc_wallscan.wall_frame_ekf import WallFrameEKFCfg  # noqa: E402
+
+
+def _quat_to_rot(w: float, x: float, y: float, z: float) -> "np.ndarray":
+    return np.array([
+        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+    ])
+
+
+def _rpy_to_rot(roll: float, pitch: float, yaw: float) -> "np.ndarray":
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return (np.array([[cy, -sy, 0], [sy, cy, 0], [0, 0, 1]])
+            @ np.array([[cp, 0, sp], [0, 1, 0], [-sp, 0, cp]])
+            @ np.array([[1, 0, 0], [0, cr, -sr], [0, sr, cr]]))
 
 
 def _yaw_roll_pitch(q) -> tuple[float, float, float]:
@@ -76,6 +94,13 @@ class EstimatorBridge(Node):
         # unless the marker frame is rigged (scenario 3 needs the marker).
         p("anchor_without_fix", False)
         p("anchor_r0", 4.5)  # blind-anchor radius, R - d_ref
+        # IMU mount/convention correction, deg, R_body_imu = Rz(yaw)Ry(pitch)Rx(roll).
+        # Field finding 2026-08-18: the 3DM-GV7 attitude arrived roll~180 with the robot
+        # upright — the MPC believed it was inverted, "righted" it with heave
+        # differential (physical rocking) and flew depth INVERTED (body +z = world -z
+        # in its belief). Set [180,0,0] for this vehicle; verify live: robot upright
+        # -> the first-IMU log below must say roll ~ 0.
+        p("imu_mount_rpy_deg", [0.0, 0.0, 0.0])
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         self.calib = TankCalib(
@@ -87,6 +112,9 @@ class EstimatorBridge(Node):
         self.initialized = False
         self.dt = 1.0 / float(g("rate_hz"))
         self.stale_warn = float(g("stale_warn_s"))
+        mr = [math.radians(float(v)) for v in g("imu_mount_rpy_deg")]
+        self._R_bi = _rpy_to_rot(mr[0], mr[1], mr[2])  # imu-frame vectors -> body frame
+        self._imu_logged = False
 
         try:
             from dvl_msgs.msg import DVL
@@ -129,9 +157,21 @@ class EstimatorBridge(Node):
             self.asm.feed_dvl(v.x, v.y, v.z, self._now())
 
     def _on_imu(self, m: Imu) -> None:
-        _, roll, pitch = _yaw_roll_pitch(m.orientation)
+        q = m.orientation
+        R_wi = _quat_to_rot(q.w, q.x, q.y, q.z)
+        R_wb = R_wi @ self._R_bi.T          # world<-body = world<-imu . imu<-body
+        roll = math.atan2(R_wb[2, 1], R_wb[2, 2])
+        pitch = -math.asin(max(-1.0, min(1.0, R_wb[2, 0])))
         w = m.angular_velocity
-        self.asm.feed_imu(w.x, w.y, w.z, roll, pitch, self._now())
+        gyro_b = self._R_bi @ np.array([w.x, w.y, w.z])   # imu-frame rates -> body
+        if not self._imu_logged:
+            self._imu_logged = True
+            self.get_logger().info(
+                f"first IMU (mount-corrected): roll={math.degrees(roll):+.1f} deg "
+                f"pitch={math.degrees(pitch):+.1f} deg — robot upright should read ~0; "
+                "if not, fix imu_mount_rpy_deg BEFORE any closed loop")
+        self.asm.feed_imu(float(gyro_b[0]), float(gyro_b[1]), float(gyro_b[2]),
+                          roll, pitch, self._now())
 
     def _on_depth(self, m: Float64) -> None:
         self.asm.feed_depth(m.data, self._now())

@@ -25,6 +25,19 @@ floor 0.016, surface float ~0.25), so Z_HOLD must be read live (~0.10-0.15
 mid-column), and the 'stationary' pre-enable fiction drift (r 4.5 -> 5.34)
 shows the blind anchor decays within minutes — depth_only is mandatory, not
 optional, without a marker.
+
+RETRY with depth_only (same day, bags 01_38_41 / 01_39_48) — SECOND ROOT CAUSE:
+the state attitude arrived roll ~ +-180 deg with the robot physically upright
+(3DM-GV7 NED/mount convention, uncorrected in the bridge). Consequences seen in
+the 80 s bag: (a) the MPC believed the robot inverted and, with roll werr=20
+still active, pumped heave DIFFERENTIAL to "right" it -> real physical rocking
+(roll estimate swinging +-180 within seconds); (b) heave thrust direction is
+rotated by the believed attitude, so depth response ran INVERTED — at t=32-40 s
+it commanded down (z above ref) and the robot rose 0.25 -> 0.30 m. Fix:
+estimator_bridge imu_mount_rpy_deg (set [180,0,0] for this vehicle; verified
+math: corrected roll 0 when flipped, true tilt preserved, gyro axes remapped).
+Field check before ANY closed loop: the node's first-IMU log must read
+roll ~ 0 with the robot upright.
 """
 import numpy as np
 from rosbags.rosbag2 import Reader

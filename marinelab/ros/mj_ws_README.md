@@ -131,6 +131,7 @@ export ACADOS_SOURCE_DIR=$HOME/acados LD_LIBRARY_PATH=$HOME/acados/lib:$LD_LIBRA
 #       볼 때는 anchor_without_fix:=true (블라인드 앵커 — x/y/s는 fix 전까지 허구,
 #       폐루프(③) 금지).
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p imu_mount_rpy_deg:="[180.0,0.0,0.0]" \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=0.0 -p marker_y:=0.0 -p marker_yaw:=0.0 \
   -p wall_topic:=/sensor/sonar/ping1d/range -p wall_msg:=range \
@@ -166,6 +167,7 @@ teleop(§3)을 auto로 두고 확인할 것: `/wallscan/state` 50 Hz /
 # 이유: 소형 수조의 실제 벽거리(≪1.5 m)를 소나로 먹이면 가상 원통(R=6,
 # d_ref=1.5) 기하와 충돌해 혁신이 마커 fix와 싸운다. 소나 없이 마커+깊이로만.
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p imu_mount_rpy_deg:="[180.0,0.0,0.0]" \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0
 # marker_x=4.5: 마커 바로 아래가 가상 탱크의 r=4.5(=R−d_ref) 지점이 되게 —
@@ -206,6 +208,7 @@ x/y/s가 허구(②에서 실측: 정지 중 1–2 cm/s 표류)라 컨트롤러�
 ```bash
 # T1: ②와 동일하게 anchor_without_fix:=true 유지 (wall/마커 없음)
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p imu_mount_rpy_deg:="[180.0,0.0,0.0]" \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0 \
   -p anchor_without_fix:=true
@@ -249,6 +252,7 @@ ros2 topic hz /imu/data /bar10xt/depth /dvl/data   # dvl은 끊겼다 이어져�
 
 ```bash
 ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
+  -p imu_mount_rpy_deg:="[180.0,0.0,0.0]" \
   -p tank_height:=0.85 -p tank_radius:=6.0 \
   -p marker_x:=4.5 -p marker_y:=0.0 -p marker_yaw:=0.0 \
   -p anchor_without_fix:=true
