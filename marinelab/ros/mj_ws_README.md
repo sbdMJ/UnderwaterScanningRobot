@@ -284,14 +284,22 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
   -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 \
-  -p depth_only:=true
+  -p depth_only:=true -p reach_eps:=0.05
 # depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
 # 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
 ```
 
 기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시
 `rm -rf ~/.cache/wallscan_acados` 후 재시작) → `wallscan controller up ...`
+→ **`DEPTH-ONLY mode: zeroed werr ...` WARN 필수 확인** (없으면 depth_only가
+안 들어간 것 — 2026-08-18에 이 플래그 누락으로 바닥 고착 재발)
 → `/wallscan/u`·current_cmd 50 Hz.
+
+`reach_eps:=0.05`인 이유: 기본 0.6(본 탱크용)이면 위상이 "이미 도달"로 즉시
+넘어가 **z_ref가 Z_HOLD까지 안 가고 enable 시점 심도에 래치**된다 (실측:
+0.24에서 켜자 목표가 0.227로 굳음). 0.05면 어디서 켜도 z_ref가 0.2 m/s로
+Z_HOLD까지 램프하며 로봇을 끌고 간다. enable은 그래도 Z_HOLD 근처에서 놓고
+켜는 것이 최선 (앵커·목표 일치).
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
 
