@@ -30,9 +30,16 @@ class ThrustMapper(Node):
         p("sign", [1.0, 1.0, -1.0, -1.0, 1.0, -1.0])  # bench 08-09 + in-water descent check
         p("amps_at_full", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
         p("amps_limit", [3.0, 3.0, 3.0, 3.0, 5.0, 5.0])
-        p("newton_per_amp", [0.0] * 6)  # all-zero = uncalibrated fallback
-        p("amps_offset", [0.0] * 6)  # deadzone currents I0 (2026-08-11 bollard pull)
-        p("max_thrust", 40.0)
+        # Defaults = THE MEASURED CALIBRATION of this vehicle (bollard pull 2026-08-11
+        # + buoyancy-difference heave k 2026-08-15, thruster_mapping.md §4d/§4g). Baked
+        # in as defaults after two field sessions ran UNCALIBRATED because the list
+        # params didn't survive shell quoting — u*3A linear mapping leaves every
+        # command under the ~0.73 A friction deadzone dead, which turned the depth
+        # loop into a relay limit cycle (bags 2026-08-18 02:02 / 02:25). Override only
+        # to recalibrate; all-zero restores the uncalibrated teleop-scale fallback.
+        p("newton_per_amp", [1.594, 1.594, 1.754, 1.754, 0.99, 0.99])
+        p("amps_offset", [0.694, 0.694, 0.764, 0.764, 0.729, 0.729])
+        p("max_thrust", 3.68)
         p("stale_zero_s", 0.5)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
@@ -54,7 +61,10 @@ class ThrustMapper(Node):
         self.create_timer(0.2, self._watchdog)
         tag = "CALIBRATED" if self.map.calibrated else \
             "UNCALIBRATED (teleop manual scale — low-bandwidth trials only)"
-        self.get_logger().info(f"thrust mapper up [{tag}], order={self.map.order}")
+        self.get_logger().info(
+            f"thrust mapper up [{tag}], order={self.map.order}, "
+            f"k={[round(v, 3) for v in k]}, I0={[round(v, 3) for v in off]}, "
+            f"limit={[float(v) for v in g('amps_limit')]}")
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9

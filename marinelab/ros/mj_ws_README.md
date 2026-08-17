@@ -145,9 +145,7 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json
 
 # T3: 매퍼 (u→전류; enable OFF 동안은 0 A 명령이 나감)
-ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
-  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
-  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68
+ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args -p amps_limit:="[3.0,3.0,3.0,3.0,5.0,5.0]"   # 시나리오 ②: 기본 클램프
 ```
 
 teleop(§3)을 auto로 두고 확인할 것: `/wallscan/state` 50 Hz /
@@ -182,8 +180,6 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
 
 # T3: 매퍼 — 소형 수조에서는 amps_limit로 권한 자체를 줄인다 (안전 노브)
 ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
-  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
-  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
   -p amps_limit:="[1.5,1.5,1.5,1.5,3.0,3.0]"
 ```
 
@@ -214,8 +210,6 @@ ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
   -p anchor_without_fix:=true
 # T3: 수평 = 데드존 클램프 (추력 0), heave만 3 A
 ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
-  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
-  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
   -p amps_limit:="[0.69,0.69,0.76,0.76,3.0,3.0]"
 ```
 
@@ -265,12 +259,13 @@ ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
 
 ```bash
 ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
-  -p newton_per_amp:="[1.594,1.594,1.754,1.754,0.99,0.99]" \
-  -p amps_offset:="[0.694,0.694,0.764,0.764,0.729,0.729]" -p max_thrust:=3.68 \
   -p amps_limit:="[0.69,0.69,0.76,0.76,3.0,3.0]"   # ★ 수평 = 데드존 = 추력 0
 ```
 
-기대: `thrust mapper up [CALIBRATED]` 즉시 + `/wallscan/current_cmd` 5 Hz 0.
+기대: `thrust mapper up [CALIBRATED], ... k=[1.594, ...], I0=[0.694, ...]` 즉시
++ `/wallscan/current_cmd` 5 Hz 0. **캘리브레이션 값은 노드 기본값** (2026-08-18:
+리스트 파라미터가 셸 인용에서 깨져 두 세션이 UNCALIBRATED로 돌았던 사고 후
+기본값으로 구움) — `[UNCALIBRATED]`가 뜨면 뭔가 잘못된 것.
 
 **T2 (controller)** — 먼저 로봇을 **가용 컬럼의 중간쯤**에 손으로 잡고 T5에서
 Z_HOLD를 읽는다 (⚠ bar10xt에 ~+0.5 m 오프셋이 있어 이 수조의 state z는
