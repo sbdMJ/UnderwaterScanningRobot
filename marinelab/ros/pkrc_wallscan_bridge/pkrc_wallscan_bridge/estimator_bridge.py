@@ -94,6 +94,14 @@ class EstimatorBridge(Node):
         # unless the marker frame is rigged (scenario 3 needs the marker).
         p("anchor_without_fix", False)
         p("anchor_r0", 4.5)  # blind-anchor radius, R - d_ref
+        # Heave-velocity source. The estimator passes DVL velocities straight through to
+        # the controller state; in the acrylic pool the DVL pins v_bz to ~0 while the
+        # robot moves at 0.15 m/s, which deletes the MPC's damping feedback — measured
+        # 2026-08-18: EKF vz frozen at -0.06 while real dz/dt swung +-0.15, sustained
+        # +-9 cm depth oscillation. vz_from_depth:=true replaces v_bz with a low-pass
+        # filtered pressure-depth rate (world z-rate ~ body v_bz at small tilt).
+        p("vz_from_depth", False)
+        p("vz_lpf_tau_s", 0.5)
         # IMU mount/convention correction, deg, R_body_imu = Rz(yaw)Ry(pitch)Rx(roll).
         # Field finding 2026-08-18: the 3DM-GV7 attitude arrived roll~180 with the robot
         # upright — the MPC believed it was inverted, "righted" it with heave
@@ -115,6 +123,10 @@ class EstimatorBridge(Node):
         mr = [math.radians(float(v)) for v in g("imu_mount_rpy_deg")]
         self._R_bi = _rpy_to_rot(mr[0], mr[1], mr[2])  # imu-frame vectors -> body frame
         self._imu_logged = False
+        self._vz_from_depth = bool(g("vz_from_depth"))
+        self._vz_tau = float(g("vz_lpf_tau_s"))
+        self._vz_est = 0.0
+        self._prev_depth: tuple[float, float] | None = None  # (t, depth_below_surface)
 
         try:
             from dvl_msgs.msg import DVL
@@ -174,7 +186,16 @@ class EstimatorBridge(Node):
                           roll, pitch, self._now())
 
     def _on_depth(self, m: Float64) -> None:
-        self.asm.feed_depth(m.data, self._now())
+        now = self._now()
+        self.asm.feed_depth(m.data, now)
+        if self._prev_depth is not None:
+            t0, d0 = self._prev_depth
+            dt = now - t0
+            if 1e-3 < dt < 2.0:
+                raw = -(float(m.data) - d0) / dt  # world z-rate (z up = -depth rate)
+                a = dt / (self._vz_tau + dt)
+                self._vz_est += a * (raw - self._vz_est)
+        self._prev_depth = (now, float(m.data))
 
     def _on_wall(self, m: Float32) -> None:
         self.asm.feed_wall_range(float(m.data), self._now())
@@ -216,6 +237,10 @@ class EstimatorBridge(Node):
             self.get_logger().info(
                 f"filter anchored at r={r0:.2f} phi={phi0:.2f} theta={theta0:.2f}")
 
+        if self._vz_from_depth:
+            import dataclasses
+
+            sample = dataclasses.replace(sample, v_bz=self._vz_est)
         veh = self.est.step(sample, self.dt)
         ages = self.asm.ages(now)
         for ch in ("dvl", "depth"):
