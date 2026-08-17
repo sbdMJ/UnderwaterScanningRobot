@@ -177,10 +177,12 @@ ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
 # 로봇 초기 기수 방향과 맞춰 붙이면 marker_yaw:=0으로 충분.
 
 # T2: 컨트롤러 — 스캔 컬럼 붕괴. Z_HOLD는 아래 절차에서 읽은 값.
+# 첫 폐루프는 method:=nominal 권장 (ssi는 hold 확인 후); reach_eps 0.05는
+# 소형 수조 필수 (기본 0.6이면 z_ref가 enable 심도에 래치 — 2026-08-18 실측).
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
-  -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
+  -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
-  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
 
 # T3: 매퍼 — 소형 수조에서는 amps_limit로 권한 자체를 줄인다 (안전 노브)
 ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
@@ -217,7 +219,8 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
   -p amps_limit:="[0.69,0.69,0.76,0.76,3.0,3.0]"
 ```
 
-T2와 절차는 ③ 본문과 동일 (Z_HOLD 읽어서 z_top=z_bottom, sway_step 0).
+T2는 아래 "터미널별 상세"의 명령을 그대로 쓴다 — **마커리스는
+`depth_only:=true` + `reach_eps:=0.05`가 필수** (③ 본문 T2와 다름).
 관찰 대상은 **z hold 품질만**: 유지 정밀도(±cm), heave 전류 패턴
 (평형 ~0.85 A 근방 + 보정), 손으로 10 cm 눌렀다 놓을 때 복원. 수평/요는
 전류가 데드존이라 아무 일도 안 일어나는 게 정상이고, current_cmd에 찍히는
