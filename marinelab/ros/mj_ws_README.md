@@ -268,20 +268,26 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
 
 기대: `thrust mapper up [CALIBRATED]` 즉시 + `/wallscan/current_cmd` 5 Hz 0.
 
-**T2 (controller)** — 먼저 로봇을 목표 심도(수면 아래 ~0.4 m)에 손으로 잡고
-T5에서 Z_HOLD를 읽는다:
+**T2 (controller)** — 먼저 로봇을 **가용 컬럼의 중간쯤**에 손으로 잡고 T5에서
+Z_HOLD를 읽는다 (⚠ bar10xt에 ~+0.5 m 오프셋이 있어 이 수조의 state z는
+바닥 ~0.02, 수면 부유 ~0.25 — Z_HOLD는 **0.10–0.15 근방**이 정상이다.
+바닥·수면과 각각 ≥8 cm 여유 확인):
 
 ```bash
 ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HOLD
 ```
 
-공통 서두 후 (Z_HOLD를 읽은 값으로 치환):
+공통 서두 후 (Z_HOLD 치환; **마커리스는 depth_only 필수 + 첫 시도는 nominal** —
+2026-08-18 실측: depth_only 없이는 허구 수평 오차가 heave까지 지배해 바닥 고착):
 
 ```bash
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
-  -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
+  -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
-  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 \
+  -p depth_only:=true
+# depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
+# 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
 ```
 
 기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시

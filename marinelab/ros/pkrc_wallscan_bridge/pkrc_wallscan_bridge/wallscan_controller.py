@@ -101,6 +101,14 @@ class WallScanControllerNode(Node):
         p("reach_eps", 0.6), p("reach_hold", 10)
         p("ref_step", 0.004), p("ref_step_s", 0.002), p("dt_mpc", 0.05)
         p("stale_zero_s", 0.5)
+        # Marker-less depth-hold (small pool): zero the horizontal error weights so the
+        # MPC cannot trade depth for the FICTIONAL wall/s errors. Field finding
+        # 2026-08-18: with blind-anchor drift (~0.8 m fake wall error) the optimizer
+        # exploited the 21 deg roll to squeeze lateral force out of the HEAVE pair —
+        # full-down u with zero depth error, robot pinned to the floor. Physically
+        # neutering the horizontal thrusters (amps_limit) is not enough: the model
+        # doesn't know they are neutered; the objective must match.
+        p("depth_only", False)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         plant_json = str(g("plant_json"))
@@ -129,6 +137,19 @@ class WallScanControllerNode(Node):
         ctl = _build_controller(self, str(g("method")), plant, mpc_cfg,
                                 int(g("horizon")), int(g("rti_iters")),
                                 str(g("code_export_root")))
+        if bool(g("depth_only")):
+            from marinelab.tasks.pkrc_wallscan.mpc_reference import ERROR_NAMES, NE
+
+            w = np.asarray(ctl.weights, float).copy()
+            zeroed = ("radial", "s", "v_rad", "v_tan", "head_x", "head_y")
+            for i, name in enumerate(ERROR_NAMES):
+                if name in zeroed:
+                    w[i] = 0.0
+            ctl.set_weights(w[:NE], w[NE:])
+            self.get_logger().warning(
+                f"DEPTH-ONLY mode: zeroed werr for {zeroed} — the controller regulates "
+                "z + attitude only; horizontal commands are cost-free noise (keep the "
+                "horizontal amps_limit at the deadzone!)")
         self.loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg, horizon=int(g("horizon")))
         self.enabled = False
         self.was_enabled = False
