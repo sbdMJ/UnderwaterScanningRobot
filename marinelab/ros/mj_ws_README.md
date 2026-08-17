@@ -35,6 +35,10 @@ colcon build --symlink-install
 `--symlink-install`이면 이후 파이썬 파일 수정이 재빌드 없이 반영된다.
 (pkrc_wallscan_bridge까지 같이 빌드되지만 무해 — 실행만 Phase D에서.)
 
+⚠ **rsync로 코드를 갱신했으면 떠 있는 브리지 노드(T1~T3)를 전부 재시작**할 것
+— symlink는 파일만 바꾸고 실행 중인 프로세스는 옛 코드로 계속 돈다 (2026-08-18:
+mapper 재시작 누락으로 무캘리브레이션 리밋사이클이 한 세션 더 재발).
+
 ## 3. teleop 실행 — 이 터미널은 hero_ws 대신 mj_ws를 source
 
 ```bash
