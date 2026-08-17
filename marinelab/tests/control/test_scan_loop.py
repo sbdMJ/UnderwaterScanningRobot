@@ -112,6 +112,38 @@ def test_phase_machine_advances_descend_to_sway_on_a_scripted_dive():
         "the ramped s_ref must climb toward the sway target"
 
 
+def test_hold_z_pins_the_reference_and_never_advances_the_phase():
+    """Depth-hold mode (field fix 2026-08-18, bag 03_41_32): with z_top == z_bottom the
+    phase machine wraps continuously and re-latches z_ref at the current depth on every
+    SWAY entry. hold_z must bypass it: z_ref ramps to the constant target and stays there
+    no matter how the vehicle moves, s_ref stays frozen at the enable-time s_hat."""
+    ctl = RecordingController()
+    scan, mpc = _cfgs()
+    loop = WallScanControlLoop(ctl, scan, mpc, hold_z=0.13)
+    loop.reset(_veh(z=0.25))
+
+    z = 0.25
+    for i in range(400):
+        # vehicle oscillates around the target — exactly what re-latched z_hold before
+        z_veh = z + 0.05 * math.sin(i / 10.0)
+        loop.step(_veh(z=z_veh), s_hat=1.09 if i else 0.7, theta_hat=0.0)
+        z_ref, s_ref = loop.refs
+        z += np.clip(z_ref - z, -0.02, 0.02)
+        assert loop.phase == 0 and loop.cycles == 0
+        assert s_ref == pytest.approx(0.7), "s_ref frozen at the FIRST post-reset s_hat"
+
+    z_ref, _ = loop.refs
+    assert z_ref == pytest.approx(0.13, abs=1e-6), "z_ref arrived at hold_z and stays"
+    ref = ctl.refs[-1]
+    assert np.allclose(ref.z_ref, 0.13), "whole preview holds the target"
+    assert np.allclose(ref.v_z_des, 0.0) and np.allclose(ref.v_tan_des, 0.0)
+    # re-enable re-anchors the ramp and re-freezes s at the new s_hat
+    loop.reset(_veh(z=0.4))
+    loop.step(_veh(z=0.4), s_hat=2.0, theta_hat=0.0)
+    z_ref, s_ref = loop.refs
+    assert abs(z_ref - 0.4) < 0.05 and s_ref == pytest.approx(2.0)
+
+
 def test_reset_reanchors_at_the_current_depth_and_zeroes_progress():
     ctl = RecordingController()
     scan, mpc = _cfgs()

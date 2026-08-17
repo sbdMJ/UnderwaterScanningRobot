@@ -176,12 +176,15 @@ ros2 run pkrc_wallscan_bridge estimator_bridge --ros-args \
 # 컨트롤러의 "벽거리 1.5 m" 목표가 현 위치에서 이미 충족되도록. 마커의 x축을
 # 로봇 초기 기수 방향과 맞춰 붙이면 marker_yaw:=0으로 충분.
 
-# T2: 컨트롤러 — 스캔 컬럼 붕괴. Z_HOLD는 아래 절차에서 읽은 값.
-# 첫 폐루프는 method:=nominal 권장 (ssi는 hold 확인 후); reach_eps 0.05는
-# 소형 수조 필수 (기본 0.6이면 z_ref가 enable 심도에 래치 — 2026-08-18 실측).
+# T2: 컨트롤러 — depth-hold는 hold_z로 상태머신을 통째로 우회한다. Z_HOLD는
+# 아래 절차에서 읽은 값. 첫 폐루프는 method:=nominal 권장 (ssi는 hold 확인 후).
+# ★ hold_z 필수 — z_top=z_bottom 붕괴만으로는 안 된다 (2026-08-18 bag 03_41:
+# 도달 조건이 항상 참이라 위상이 34 s에 49회 순환, SWAY 진입마다 z_ref를 현재
+# 심도로 재래치 → ±4 cm 사각파 주입 → 15 cm 리밋사이클).
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
+  -p hold_z:=Z_HOLD \
   -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
 
 # T3: 매퍼 — 소형 수조에서는 amps_limit로 권한 자체를 줄인다 (안전 노브)
@@ -192,8 +195,8 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
 절차:
 1. 로봇을 수조 중앙, 목표 심도(~수면 아래 0.4 m)에 손으로 잡고
    `ros2 topic echo --once /wallscan/state --field pose.pose.position.z`
-   → 그 값을 `Z_HOLD`로 T2 재시작 (앵커는 enable 엣지가 다시 잡지만,
-   z_top=z_bottom이 현재 z와 같아야 램프가 0이 된다).
+   → 그 값을 `Z_HOLD`로 T2 재시작 (enable 엣지에서 z_ref가 현재 심도에
+   앵커된 뒤 0.2 m/s로 hold_z까지 램프하고 거기 고정된다).
 2. teleop auto ON (`g`), 손 놓고 →
    `ros2 topic pub -1 /wallscan/enable std_msgs/msg/Bool "{data: true}"`.
 3. 관찰 (첫 시도 ≤30 s): 심도 유지 ±10 cm, 전류 `/teleop/thruster_currents`가
@@ -290,23 +293,27 @@ ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HO
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
   -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
-  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 \
-  -p depth_only:=true -p reach_eps:=0.05
+  -p hold_z:=Z_HOLD -p depth_only:=true \
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
+# hold_z: 상태머신 우회(고정 z_ref) — 2026-08-18 bag 03_41에서 위상 순환이
+# z_ref를 0.13↔0.17로 튕겨 15 cm 리밋사이클을 만든 것의 근본 수정.
 # depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
 # 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
 ```
 
 기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시
 `rm -rf ~/.cache/wallscan_acados` 후 재시작) → `wallscan controller up ...`
-→ **`DEPTH-ONLY mode: zeroed werr ...` WARN 필수 확인** (없으면 depth_only가
-안 들어간 것 — 2026-08-18에 이 플래그 누락으로 바닥 고착 재발)
+→ **WARN 2개 필수 확인**: `DEPTH-ONLY mode: zeroed werr ...` (없으면
+depth_only 누락 — 2026-08-18에 두 번 누락, 바닥 고착·리밋사이클 재발) +
+`DEPTH-HOLD mode: phase machine bypassed, z_ref -> ...`
 → `/wallscan/u`·current_cmd 50 Hz.
 
-`reach_eps:=0.05`인 이유: 기본 0.6(본 탱크용)이면 위상이 "이미 도달"로 즉시
-넘어가 **z_ref가 Z_HOLD까지 안 가고 enable 시점 심도에 래치**된다 (실측:
-0.24에서 켜자 목표가 0.227로 굳음). 0.05면 어디서 켜도 z_ref가 0.2 m/s로
-Z_HOLD까지 램프하며 로봇을 끌고 간다. enable은 그래도 Z_HOLD 근처에서 놓고
-켜는 것이 최선 (앵커·목표 일치).
+enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
+- **u[0..3] ≈ 0** — 0이 아니면 depth_only가 안 들어간 것 (03_41 bag에서
+  |u0| 평균 0.52로 검출; 수평 데드존 클램프 덕에 위험하진 않지만 무효 시험)
+- **u[4], u[5]가 ±1 포화 왕복이 아님** — 포화 왕복(03_41: 틱의 78%)이면
+  z_ref가 튀고 있는 것 (hold_z 누락) → 즉시 OFF
+- controller_debug의 phase(2번째 값)가 **0에 고정** (위상 순환 = hold_z 누락)
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
 

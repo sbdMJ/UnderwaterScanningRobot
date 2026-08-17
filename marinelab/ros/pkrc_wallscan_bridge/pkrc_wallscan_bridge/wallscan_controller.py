@@ -109,6 +109,14 @@ class WallScanControllerNode(Node):
         # neutering the horizontal thrusters (amps_limit) is not enough: the model
         # doesn't know they are neutered; the objective must match.
         p("depth_only", False)
+        # Station-keeping: hold_z >= 0 pins the reference to that height and BYPASSES the
+        # scan phase machine. Field finding 2026-08-18 (bag 03_41_32): with
+        # z_top == z_bottom == Z_HOLD the reach conditions are trivially true, the phase
+        # machine wrapped 49x in 34 s and every SWAY entry re-latched z_hold at the
+        # CURRENT depth — z_ref bounced 0.13<->0.17 and the depth loop limit-cycled at
+        # +-7.5 cm. For any pure depth-hold trial set hold_z (and depth_only when
+        # marker-less); leave at -1 for real scanning.
+        p("hold_z", -1.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         plant_json = str(g("plant_json"))
@@ -150,7 +158,13 @@ class WallScanControllerNode(Node):
                 f"DEPTH-ONLY mode: zeroed werr for {zeroed} — the controller regulates "
                 "z + attitude only; horizontal commands are cost-free noise (keep the "
                 "horizontal amps_limit at the deadzone!)")
-        self.loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg, horizon=int(g("horizon")))
+        hold_z = float(g("hold_z"))
+        if hold_z >= 0.0:
+            self.get_logger().warning(
+                f"DEPTH-HOLD mode: phase machine bypassed, z_ref -> {hold_z:.3f} m "
+                "(constant), s_ref frozen at enable — no scanning will happen")
+        self.loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg, horizon=int(g("horizon")),
+                                        hold_z=hold_z if hold_z >= 0.0 else None)
         self.enabled = False
         self.was_enabled = False
         self.s_hat = None
