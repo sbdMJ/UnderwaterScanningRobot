@@ -66,7 +66,55 @@ parser.add_argument("--lr", type=float, default=5e-4)
 parser.add_argument("--batch_size", type=int, default=10)
 parser.add_argument("--grad_clip", type=float, default=0.1)
 parser.add_argument("--history_len", type=int, default=4)
+parser.add_argument("--attitude_range", type=float, default=0.09,
+                    help="V6: max |roll|,|pitch| at segment start [rad]. Default keeps the "
+                         "original mild 0.09 (solver-interior by design). The E2/Eval stress "
+                         "draws start at up to ~0.8 rad; V5 probes showed dynamics DR alone "
+                         "does not fix the dr75/s2 collision (start tilt 40 deg = attitude "
+                         "itself is OOD). Values > 0.09 are drawn as a 50/50 mix of mild and "
+                         "U(0.09, r) segments so easy-regime sample efficiency survives.")
+parser.add_argument("--attitude_extreme_frac", type=float, default=0.5,
+                    help="Fraction of segments drawn from the widened attitude range "
+                         "(the rest stay mild 0.09). V6/V7 at 0.5 fixed the stress axis "
+                         "but regressed the nominal s2 cell 1.7-4x — the mix starves "
+                         "precision-tracking practice. Lower = more nominal-friendly.")
+parser.add_argument("--current_speed", type=float, default=0.0,
+                    help="Plan-A fine-tune environment: constant world-frame current of this "
+                         "magnitude [m/s] per segment, heading redrawn U(0,2pi) each segment "
+                         "(the deployment analogue is 'a site with current whose direction "
+                         "the robot meets at every wall bearing'). The MPC internal model "
+                         "stays nominal — the disturbance is the test subject. 0 = off.")
+parser.add_argument("--fluid_scale_fixed", type=str, default="",
+                    help="E2b' plant-specific fine-tune: FIXED fluid-coefficient scales, "
+                         "'s' or 'am,ld,qd' (e.g. '1.5' or '1.5,0.7,0.7'). Deterministic "
+                         "plant shift — the Laguna-Seca analogue: one specific new plant to "
+                         "adapt to, unlike --dr_fluid's per-segment random redraw.")
+parser.add_argument("--dr_fluid", type=float, default=0.0,
+                    help="V5: per-segment fluid-coefficient DR half-range (added mass, "
+                         "linear/quadratic damping scaled by U(1-r, 1+r) each segment; the "
+                         "MPC model stays nominal). Motivation, measured 2026-08-09: trained "
+                         "on the nominal plant, the policy pinned 83%% of its weights at the "
+                         "FLOOR in the out-of-distribution E2 dr75/s2 cell and collided at "
+                         "t=25.5 s — DR'd dynamics must be in-distribution. 0.75 covers the "
+                         "whole E2 sweep; 0 = original nominal-plant behaviour.")
+parser.add_argument("--preview_nodes", type=str, default="",
+                    help="Comma-separated horizon stage indices whose reference deltas are "
+                         "appended to the policy features (V1 look-ahead, parent paper "
+                         "Fig. 5/8: the policy must see the future reference to adapt "
+                         "weights BEFORE an event). Empty = original current-error-only "
+                         "features. Example: '10,20,30'.")
 parser.add_argument("--ckpt", type=str, default=None, help="Evaluate this checkpoint (learning off).")
+parser.add_argument("--resume_ckpt", type=str, default=None,
+                    help="Load this checkpoint and CONTINUE learning (E2b online fine-tune: "
+                         "parent paper's 'quick online fine-tuning' — a short budget under the "
+                         "deployment condition's physics). Architecture is rebuilt from the "
+                         "checkpoint itself, so preview/hidden/history flags are ignored.")
+parser.add_argument("--werr_ub", type=float, default=5000.0,
+                    help="E4(a) ablation knob: upper bound of the error-weight range "
+                         "(plan compares 500 vs 5000). Fresh training only, not with --resume_ckpt.")
+parser.add_argument("--saturation_thresh", type=float, default=0.98,
+                    help="E4(a) ablation knob: learner skips steps with |u|>thresh (solver "
+                         "sensitivity is exactly zero there). Set >=10 to disable the skip.")
 parser.add_argument("--ckpt_dir", type=str, default=None)
 parser.add_argument("--ckpt_every", type=int, default=5000)
 parser.add_argument("--log_every", type=int, default=200)
@@ -87,7 +135,9 @@ import isaaclab_tasks  # noqa: F401
 
 import marinelab  # noqa: F401
 
-from marinelab.algorithms.diff_wmpc import DiffWMPCLearner, WallScanLossCfg, WeightPolicy
+from marinelab.algorithms.diff_wmpc import (
+    DiffWMPCLearner, WallScanLossCfg, WeightPolicy, policy_features,
+)
 from marinelab.assets.pkrc import PKRCThrusterCfg, PKRCThrusterCfgFixedTAM
 from marinelab.tasks.pkrc_wallscan import mpc_reference as mref
 from marinelab.tasks.pkrc_wallscan import scan_state_machine as ssm
@@ -132,21 +182,46 @@ def main() -> None:
                       code_export_root=os.path.join(REPO_ROOT, "isaaclab", "logs",
                                                     "c_generated_code_wallscan_diff"))
 
-    # feature = the NE error entries + phase(sin, cos). Phase matters: the useful weight
-    # schedule is phase-dependent (a sway leg wants roll authority, a heave leg wants z),
-    # and without it the policy would have to emit one compromise for all four.
-    feat_dim = NE + 2
+    # feature = the NE error entries + phase(sin, cos) [+ V1 look-ahead reference deltas].
+    # Phase matters: the useful weight schedule is phase-dependent (a sway leg wants roll
+    # authority, a heave leg wants z), and without it the policy would have to emit one
+    # compromise for all four. The construction itself lives in policy_features() —
+    # shared with the deployment adapter so the two can never drift apart.
+    preview_nodes = tuple(int(k) for k in args_cli.preview_nodes.split(",") if k.strip())
+    feat_dim = NE + 2 + 2 * len(preview_nodes)
     werr_lb = np.full(NE, 0.1)
     if args_cli.w_radial_floor > 0.0:
         werr_lb[[0, 6, 7]] = args_cli.w_radial_floor  # radial, head_x, head_y
-    policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
-                          werr_init=np.asarray(DEFAULT_WERR, float),
-                          wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb)
+    if args_cli.resume_ckpt is not None:
+        state = torch.load(args_cli.resume_ckpt, map_location="cpu")
+        policy = WeightPolicy.from_state_dict(state, NE, mpc.nu,
+                                              werr_init=np.asarray(DEFAULT_WERR, float),
+                                              wu_init=np.full(mpc.nu, DEFAULT_WU))
+        preview_nodes = tuple(int(k) for k in policy.preview_nodes.tolist())
+        feat_dim = policy.feat_dim
+        print(f"[diff-wmpc] RESUME from {args_cli.resume_ckpt} (learning ON, "
+              f"feat_dim={feat_dim}, preview={preview_nodes})")
+    else:
+        policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
+                              werr_init=np.asarray(DEFAULT_WERR, float),
+                              wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb,
+                              werr_ub=args_cli.werr_ub, preview_nodes=preview_nodes)
     print(f"[diff-wmpc] loss nodes {mpc.sens_nodes} "
           f"(= {[round(k * args_cli.dt_mpc, 2) for k in mpc.sens_nodes]} s ahead)  "
           f"radial/heading floor {args_cli.w_radial_floor}")
     learner = DiffWMPCLearner(policy, n_pglobal=mpc.n_pglobal, lr=args_cli.lr,
-                              batch_size=args_cli.batch_size, grad_clip=args_cli.grad_clip)
+                              batch_size=args_cli.batch_size, grad_clip=args_cli.grad_clip,
+                              saturation_thresh=args_cli.saturation_thresh)
+    if args_cli.resume_ckpt is not None:
+        state = torch.load(args_cli.resume_ckpt, map_location="cpu")
+        if "opt" in state:  # continue the Adam state too (fine-tune, not re-init)
+            learner.opt.load_state_dict(state["opt"])
+            # load_state_dict restores param_groups WHOLESALE — including the lr the
+            # checkpoint was trained with, silently clobbering --lr (found 2026-08-10:
+            # an lr-3e-5 'retrain' replayed the 5e-4 run bit-for-bit). Moments/steps are
+            # what we want to keep; the lr must follow the CLI.
+            for g in learner.opt.param_groups:
+                g["lr"] = args_cli.lr
     loss_cfg = WallScanLossCfg(max_thrust=prm.max_thrust)
     if args_cli.l_v_z is not None:
         loss_cfg.l_v_z = args_cli.l_v_z
@@ -171,13 +246,37 @@ def main() -> None:
         """Random (radius, bearing, depth, attitude, phase) so a step budget buys coverage."""
         env.reset()
         env.episode_length_buf[:] = 0
+        if args_cli.current_speed > 0.0:
+            # Same OceanCurrent path the runner's CurrentDriver uses (env_variants).
+            # Set AFTER env.reset() so a reset cannot zero it under us.
+            h = float(rng.uniform(0.0, 2.0 * math.pi))
+            v = torch.zeros(1, 6, device=dev)
+            v[0, 0] = args_cli.current_speed * math.cos(h)
+            v[0, 1] = args_cli.current_speed * math.sin(h)
+            env._hydro._current.set(ALL, velocity=v)
+        if args_cli.fluid_scale_fixed:
+            v = [float(x) for x in args_cli.fluid_scale_fixed.split(",")]
+            am, ld, qd = (v * 3)[:3] if len(v) == 1 else v
+            sc = lambda x: torch.full((1,), x, device=dev)  # noqa: E731
+            env._hydro.scale_parameters(ALL, added_mass=sc(am),
+                                        linear_damping=sc(ld), quadratic_damping=sc(qd))
+        elif args_cli.dr_fluid > 0.0:
+            # V5: same scale_parameters tensor path DORAEMON uses — scales are relative to
+            # the immutable base snapshot, so per-segment redraws never compound.
+            lo, hi = 1.0 - args_cli.dr_fluid, 1.0 + args_cli.dr_fluid
+            draw = lambda: torch.empty(1, device=dev).uniform_(lo, hi)  # noqa: E731
+            env._hydro.scale_parameters(ALL, added_mass=draw(),
+                                        linear_damping=draw(), quadratic_damping=draw())
         r = float(rng.uniform(3.5, 5.3))          # radial error in [-1.0, +0.8] m
         th = float(rng.uniform(0.0, 2 * math.pi))
         z = float(rng.uniform(cfg_env.scan.z_bottom + 0.2, cfg_env.scan.z_top - 0.2))
         # Yaw within the envelope where the solve stays interior: a huge initial heading
         # error just produces saturated steps, which the learner discards anyway.
         yaw = th + float(rng.uniform(-0.7, 0.7))
-        roll, pitch = (float(rng.uniform(-0.09, 0.09)) for _ in range(2))
+        r_att = 0.09
+        if args_cli.attitude_range > 0.09 and rng.uniform() < args_cli.attitude_extreme_frac:
+            r_att = float(rng.uniform(0.09, args_cli.attitude_range))
+        roll, pitch = (float(rng.uniform(-r_att, r_att)) for _ in range(2))
         phase = int(rng.integers(0, 4))
 
         root = env._robot.data.default_root_state.clone()
@@ -243,10 +342,9 @@ def main() -> None:
 
         with torch.no_grad():
             e_now = errors_at(x0_t[0], 0)
-            ph = state_m.phase.float()
-            feat = torch.cat([e_now.cpu(),
-                              torch.stack([torch.sin(2 * math.pi * ph[0] / 4),
-                                           torch.cos(2 * math.pi * ph[0] / 4)]).cpu()])
+            feat = policy_features(e_now.cpu(), float(state_m.phase[0]),
+                                   z_ref=ref["z_ref"][0].cpu(), s_ref=ref["s_ref"][0].cpu(),
+                                   preview_nodes=preview_nodes)
 
         w = learner.compute_weights(feat)
         P = mpc.param_matrix({k: v[0] for k, v in ref.items()},

@@ -1,0 +1,33 @@
+# E2(b)': plant-SPECIFIC adaptation — the faithful Monza->Laguna Seca analogue.
+# The first e2b attempt fine-tuned on a random DR *distribution* and evaluated on fresh
+# random draws, so there was no fixed environment to specialize to (that run is kept as
+# the "distribution-level fine-tune is saturated" data point). Here each condition is ONE
+# deterministic plant shift (runner applies fixed fluid-coefficient scales post-reset;
+# the MPC internal model stays nominal), and the fine-tuned arm resumes V8a for 10k steps
+# on that exact plant (train --fluid_scale_fixed). Zero-shot vs fine-tuned on the SAME
+# fixed plant, Stage3 protocol, seeds 0-2.
+#   heavy: all fluid coefficients x1.5 (fouling / denser medium)
+#   light: x0.5 (buoyant / thinner medium)
+#   asym:  added mass x1.5, damping x0.7 (anisotropic mismatch)
+# Zero-shot arm uses the adopted checkpoint (defaults); the fine-tuned arm's config
+# (e2c_plant_adapt_ft.yaml) overrides ckpt per condition.
+exp: e2c_zs
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  ckpt: checkpoints/diff_wmpc/policy_final.pt
+
+conditions:
+  heavy: {fluid_scale: "1.5"}
+  light: {fluid_scale: "0.5"}
+  asym: {fluid_scale: "1.5,0.7,0.7"}
+
+methods:
+  diff:
+    tam: fixed
+
+seeds: [0, 1, 2]

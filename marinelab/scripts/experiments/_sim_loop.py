@@ -117,6 +117,13 @@ def build_env(cell: ExperimentCell):
             for i, s in enumerate(sxyz):
                 base[i] *= s
             setattr(cfg.hydrodynamics, name, tuple(base))
+    if "speed_scale" in opt:
+        # Plan-B speed axis: scale the scan ramp rates. ref_step feeds BOTH the env state
+        # machine and make_mpc_cfg's reference speeds, and eval_metrics derives its speed
+        # targets from the same fields — one knob keeps all three consistent.
+        s = float(opt["speed_scale"])
+        cfg.scan.ref_step *= s
+        cfg.scan.ref_step_s *= s
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 
@@ -283,6 +290,21 @@ def _gt_errors(env, pos, quat, z_ref, s_ref, prev_z, prev_s, theta, s_anchor, dt
                                 cfg=mpc_cfg).cpu().numpy()
 
 
+class _FrozenRefCtl:
+    """E4(a) ablation shim: flatten the reference preview to the stage-0 setpoint."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):  # delegate reset/weights/name/... untouched
+        return getattr(self._inner, name)
+
+    def step(self, state, ref):
+        for arr in (ref.z_ref, ref.s_ref, ref.v_tan_des, ref.v_z_des):
+            arr[1:] = arr[0]
+        return self._inner.step(state, ref)
+
+
 def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
                  score: ScoreAccumulator, *, sim_app, log_every: int = 500) -> dict:
     """Controller-owned closed loop (no spin search) — port of run_wallscan_mpc.main."""
@@ -292,6 +314,12 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     dev, dt = env.device, env.step_dt
     use_ekf = opt.get("state", "gt") == "ekf"
     scan_cfg = cfg.scan
+    if opt.get("frozen_ref"):
+        # E4(a) preview-off ablation (plan §7): repeat the stage-0 setpoint over the
+        # horizon before the controller sees it — controllers cannot tell the difference,
+        # so the toggle stays runner-side (see types.ScanReference docstring). Wrapping
+        # the controller keeps the shared WallScanControlLoop ablation-free.
+        ctl = _FrozenRefCtl(ctl)
     # The controller-owned loop (state machine + preview + controller) is the shared
     # sim/hardware core — the wallscan_controller ROS node drives the same object.
     loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg,
@@ -327,6 +355,16 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
 
     env.reset()
     env.episode_length_buf[:] = 0  # own the whole window (see run_wallscan_mpc / CLAUDE.md)
+    if "fluid_scale" in opt:
+        # E2b' deterministic plant shift ('s' or 'am,ld,qd'): applied AFTER reset so the
+        # env's own reset paths cannot re-draw over it. Same immutable-base scale_parameters
+        # path as DR — the MPC model stays nominal, so this IS the model mismatch under test.
+        v = [float(x) for x in str(opt["fluid_scale"]).split(",")]
+        am, ld, qd = (v * 3)[:3] if len(v) == 1 else v
+        ids = torch.arange(env.num_envs, device=env.device)
+        env._hydro.scale_parameters(ids, added_mass=torch.full((env.num_envs,), am, device=env.device),
+                                    linear_damping=torch.full((env.num_envs,), ld, device=env.device),
+                                    quadratic_damping=torch.full((env.num_envs,), qd, device=env.device))
     reset_internal()
     current = CurrentDriver.from_options(opt, env)  # E3: None unless the cell asks for it
 

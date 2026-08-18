@@ -32,11 +32,13 @@ class DiffWMPCController(FixedWeightNMPC):
             from marinelab.algorithms.diff_wmpc import WeightPolicy
             from marinelab.tasks.pkrc_wallscan.mpc_reference import NE
 
-            nu = self._mpc.nu
-            policy = WeightPolicy(NE + 2, NE, nu, werr_init=self._weights[:NE],
-                                  wu_init=self._weights[NE:])
+            # The checkpoint is the architecture authority (hidden/history/preview spec
+            # travel inside it) — building with ctor defaults and strict-loading was how
+            # the pre-buffer legacy checkpoint became silently unloadable.
             state = torch.load(ckpt_path, map_location="cpu")
-            policy.load_state_dict(state["policy"] if "policy" in state else state)
+            policy = WeightPolicy.from_state_dict(state, NE, self._mpc.nu,
+                                                  werr_init=self._weights[:NE],
+                                                  wu_init=self._weights[NE:])
         policy.eval()
         self._policy = policy
 
@@ -59,8 +61,9 @@ class DiffWMPCController(FixedWeightNMPC):
                 s_anchor=torch.tensor([float(ref.s_anchor)]),
                 cfg=self._mref_cfg,
             )[0]
-            ph = 2 * math.pi * float(ref.phase) / 4.0
-            feat = torch.cat([e_now, torch.tensor([math.sin(ph), math.cos(ph)])])
+            from marinelab.algorithms.diff_wmpc import policy_features
+            feat = policy_features(e_now, ref.phase, z_ref=ref.z_ref, s_ref=ref.s_ref,
+                                   preview_nodes=self._policy.preview_nodes.tolist())
             return self._policy(feat).numpy()
 
     def step(self, state: VehicleState, ref: ScanReference,

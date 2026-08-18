@@ -1,0 +1,15 @@
+# diff checkpoint bake-off screen (docs/experiments/tuning_history/diff_tuning_history.md §1)
+exp: e1_bake_diff_wmpc_mn
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+conditions:
+  nominal: {}
+methods:
+  diff:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc_mn/policy_final.pt
+seeds: [0]

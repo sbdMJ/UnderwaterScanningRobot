@@ -1,0 +1,71 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.8448672294616699,
+  "tilt_sway_deg": 1.7874703407287598,
+  "tilt_deg": 0.950462281703949,
+  "crab_deg": 1.780278205871582,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.3001543706607165,
+  "sway_speed_mps": 0.14925417485651557,
+  "heave_path_speed_mps": 0.3001543706607165,
+  "sway_path_speed_mps": 0.14925417485651557,
+  "heave_legs_scored": 6,
+  "sway_legs_scored": 7,
+  "wall_dist_err_cm": 17.19031184911728,
+  "cycles_mean": 3.0,
+  "cycles_per_env": [
+    3.0
+  ],
+  "heave_speed_target_mps": 0.3,
+  "sway_speed_target_mps": 0.15,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e2s",
+  "method": "bo",
+  "cond": "v03",
+  "seed": 2,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "gt",
+    "num_envs": 1,
+    "speed_scale": 1.5,
+    "tam": "fixed",
+    "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 9.776392782938071,
+    "solve_ms_p95": 16.1920853133779,
+    "solve_ms_max": 133.96349400863983,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.029444444444444443
+  },
+  "score": {
+    "objective": 2557.1595213032883,
+    "collided": false,
+    "scored_losses": [
+      2557.1595213032883
+    ]
+  }
+}

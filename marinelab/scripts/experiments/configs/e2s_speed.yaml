@@ -1,0 +1,35 @@
+# Plan B (advanced_experiments_todo §B): scan-speed axis, zero-shot probe.
+# speed_scale multiplies ScanCfg.ref_step/ref_step_s (env state machine + MPC reference
+# speeds + eval speed targets all derive from the same fields). All methods carry their
+# 0.2 m/s-era tuning unchanged — this is deliberately an OOD probe for the
+# situation-vs-plant-dominance boundary. Watch cycles/end_phase on the first cell
+# (reach-band timing changes with speed — CLAUDE.md equilibrium trap family).
+exp: e2s
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  v03: {speed_scale: 1.5}
+  v04: {speed_scale: 2.0}
+
+methods:
+  nominal:
+    tam: fixed
+  bo:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+  diff:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+
+seeds: [0, 1, 2]

@@ -60,6 +60,10 @@ experimental_results/
 │   ├── tables/   table.csv, table.tex                     # aggregate.py 산출
 │   └── figures/  fig_f1..f6.{png,pdf}                     # plot_figures.py 산출
 ├── e2/  e3/  ...                          # 동일 규약
+├── e2b/                                   # E2(b) 1차: 분포-수준 fine-tune (포화 판정 — 기록 보존)
+├── e2c_zs/  e2c_ft/                       # E2(b)' 플랜트 특화 3-arm (configs/e2c_plant_adapt*.yaml,
+│                                          #   diff_tuning_history.md §7.2 — Fig.7 재현 프로토콜)
+├── e4_abl/                                # E4(a) ablation (configs/e4_ablation.yaml, Table 2)
 ├── tuning/
 │   ├── bo_nmpc/   {study.db, trials.csv, best_params.json, budget.json}
 │   └── ssi_mpc/   {study.db, trials.csv, best_params.json, budget.json}

@@ -101,7 +101,11 @@ def _smooth(x: np.ndarray, window: int) -> np.ndarray:
 
 
 def fig_overlay(summary: dict, metrics: list[str], out: str, *, cond: str | None = None,
-                labels: dict[str, str] | None = None) -> list[str]:
+                labels: dict[str, str] | None = None,
+                logy_metrics: tuple[str, ...] = ("score.objective",)) -> list[str]:
+    """``logy_metrics``: panels drawn with a log y-axis. Default covers score.objective —
+    PPO's 8-env-summed objective (~3e5) flattens the 1-env MPC methods (~1e3) on a linear
+    axis into indistinguishable zero-height marks."""
     labels = labels or {}
     conds = sorted({c for (_m, c) in summary})
     cond = cond if cond is not None else conds[0]
@@ -121,6 +125,8 @@ def fig_overlay(summary: dict, metrics: list[str], out: str, *, cond: str | None
             if values:
                 ax.scatter(i + rng.uniform(-0.14, 0.14, len(values)), values, s=9,
                            color="0.25", alpha=0.65, zorder=2, linewidths=0)
+        if metric in logy_metrics:
+            ax.set_yscale("log")
         ax.set_xticks(range(len(methods)))
         ax.set_xticklabels([_label(m) for m in methods], rotation=35, ha="right", fontsize=8)
         ax.set_title(labels.get(metric, metric))
@@ -211,29 +217,35 @@ def fig_timeseries(cases: list[tuple[str, str, list[str], str]], out: str, *,
                    t_event: float | None = None, smooth_s: float = 1.0) -> list[str]:
     """cases: [(method, label, [npz_path, ...], metrics_json_path)] — every npz (seed)
     contributes all its envs; curves are the across-run mean with a ±SD band."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(4.8, 3.8), sharex=True)
+    # Three panels (2026-08-09 audit): wall distance and tilt barely register the current
+    # disturbance — a sustained tangential push mostly degrades the ARC-LENGTH tracking,
+    # which is where E3's objective differences (ssi/diff ~2x under nominal) actually live.
+    fig, (ax1, ax_s, ax2) = plt.subplots(3, 1, figsize=(4.8, 5.2), sharex=True)
     for method, label, npz_paths, metrics_path in cases:
         with open(metrics_path) as fh:
             meta = json.load(fh)
         dt, d_ref = float(meta["step_dt"]), float(meta["d_ref_m"])
         window = max(1, int(round(smooth_s / dt)))
-        wall_runs, tilt_runs = [], []
+        wall_runs, s_runs, tilt_runs = [], [], []
         for p in npz_paths:
             traj = np.load(p)
             wall_runs.append(np.abs(_traj_2d(traj["wall_dist"]) - d_ref))
+            s_runs.append(np.abs(_traj_2d(traj["s_gt"]) - _traj_2d(traj["s_ref"])))
             tilt_runs.append(_traj_2d(traj["tilt_deg"]))
         n = min(w.shape[0] for w in wall_runs)
         wall = np.concatenate([w[:n] for w in wall_runs], axis=1)
+        s_err = np.concatenate([w[:n] for w in s_runs], axis=1)
         tilt = np.concatenate([w[:n] for w in tilt_runs], axis=1)
         t = np.arange(n) * dt
-        for ax, data in ((ax1, wall), (ax2, tilt)):
+        for ax, data in ((ax1, wall), (ax_s, s_err), (ax2, tilt)):
             mean = _smooth(data.mean(axis=1), window)
             sd = _smooth(data.std(axis=1), window)
             ax.plot(t, mean, color=_color(method), label=label, zorder=3)
             if data.shape[1] > 1:
                 ax.fill_between(t, mean - sd, mean + sd, color=_color(method),
                                 alpha=0.18, linewidth=0, zorder=2)
-    for ax, ylab in ((ax1, r"Wall-distance error [m]"), (ax2, r"Tilt [deg]")):
+    for ax, ylab in ((ax1, r"Wall-distance error [m]"), (ax_s, r"Arc-length error [m]"),
+                     (ax2, r"Tilt [deg]")):
         if t_event is not None:
             ax.axvline(t_event, color="black", ls=":", lw=1.0, zorder=1)
         ax.set_ylabel(ylab)
@@ -252,7 +264,8 @@ _GROUP_FACE = ["#FFFFFF", "0.55"]  # zero-shot: hollow; fine-tuned: filled gray
 
 
 def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
-                    cond: str | None = None, ylabel: str | None = None) -> list[str]:
+                    cond: str | None = None, ylabel: str | None = None,
+                    logy: bool = False) -> list[str]:
     methods = sorted({m for s in named_summaries.values() for (m, _c) in s}, key=_method_key)
     width = 0.8 / len(named_summaries)
     fig, ax = plt.subplots(figsize=(0.95 * len(methods) + 1.6, 2.8))
@@ -265,7 +278,9 @@ def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
                 continue
             stat = summary[key][metric]
             x = i + (k - (len(named_summaries) - 1) / 2) * width
-            mean = stat["mean"] if np.isfinite(stat["mean"]) else 0.0
+            if not np.isfinite(stat["mean"]):
+                continue  # a zero-height stand-in bar is unreadable on a log axis
+            mean = stat["mean"]
             ax.bar(x, mean, width=width * 0.88, yerr=stat["sd"], capsize=3,
                    facecolor=_GROUP_FACE[k % len(_GROUP_FACE)], edgecolor=_color(m),
                    linewidth=1.3, zorder=2,
@@ -273,6 +288,8 @@ def fig_zeroshot_ft(named_summaries: dict[str, dict], metric: str, out: str, *,
             values = [v for v in stat["values"] if np.isfinite(v)]
             ax.scatter(x + rng.uniform(-width / 4, width / 4, len(values)), values, s=9,
                        color="0.2", alpha=0.7, zorder=3, linewidths=0)
+    if logy:
+        ax.set_yscale("log")
     ax.set_xticks(range(len(methods)))
     ax.set_xticklabels([_label(m) for m in methods], rotation=20, ha="right", fontsize=8)
     ax.set_ylabel(ylabel or metric)
@@ -431,11 +448,13 @@ def fig_sensitivity(rows: list[dict], out: str, *, metric: str = "score.objectiv
         vals = [v for v in vals if v is not None]
         return Counter(vals).most_common(1)[0][0] if vals else None
 
-    nrf_mode = _mode([r.get("options.ssi_n_rf") for r in rows])
-    lr_rows = [r for r in rows if r.get("options.ssi_n_rf") == nrf_mode]
-    m_family = [r for r in rows if r.get("options.ssi_n_rf") not in (None, nrf_mode)]
-    lr_fixed = _mode([r.get("options.ssi_lr") for r in (m_family or rows)])
-    m_rows = [r for r in rows if r.get("options.ssi_lr") == lr_fixed]
+    # The lr family leaves ssi_n_rf UNSET (upstream default), the M family sets it —
+    # that absence is the family marker. The old mode-of-n_rf heuristic picked an
+    # M-family value as "the fixed n_rf" and drew the lr panel from a single M cell
+    # (one point at the tuned lr) instead of the six-decade sweep.
+    m_rows = [r for r in rows if r.get("options.ssi_n_rf") is not None]
+    lr_rows = [r for r in rows if r.get("options.ssi_n_rf") is None] or rows
+    lr_fixed = _mode([r.get("options.ssi_lr") for r in (m_rows or rows)])  # noqa: F841 (title use)
 
     def _panel(ax, panel_rows, xkey, xlabel, log_x):
         groups: dict[float, list[float]] = {}
@@ -489,6 +508,11 @@ def fig_cost(offline: dict[str, dict], summary: dict, out: str, *,
     ax2.bar(xs, inf_means, width=0.62, yerr=inf_sds, capsize=3, color=colors,
             edgecolor="black", linewidth=0.6)
     ax2.set_ylabel("Computation time [ms]")
+    # PPO's 0.04 ms forward pass vs ~8 ms MPC solves: invisible on a linear axis —
+    # same >50x auto-log rule as the offline panel.
+    positive_ms = [v for v in inf_means if v > 0]
+    if positive_ms and max(positive_ms) / min(positive_ms) > 50:
+        ax2.set_yscale("log")
     for ax in (ax1, ax2):
         ax.set_xticks(xs)
         ax.set_xticklabels([_label(m) for m in methods], rotation=20, ha="right", fontsize=8)
