@@ -1,6 +1,6 @@
 # Sim-to-Real (E5) — 진행 내역과 계획
 
-> 브랜치 `feature/sim-to-real`. 마지막 갱신: 2026-08-09.
+> 브랜치 `feature/sim-to-real`. 마지막 갱신: 2026-08-18.
 > 대상 방법: SSI-MPC 우선 (파이프라인 검증 목적 — 온라인 적응까지 있는 가장 까다로운
 > 방법이 실기체에서 돌면 나머지는 부분집합), 이후 Fixed-W NMPC / PPO / diff.
 > 상세 데이터·표의 정본: [`../hw_sensor_characterization.md`](../hw_sensor_characterization.md).
@@ -36,6 +36,9 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 | D-① | **배포 plant 확정 + E4(c) 데스크톱**: `pkrc_plant_hw2026.json` (실측 종합; 테스트 2 추가) · `bench_inference.py` (isaaclab 무의존, 공유 코어째 계측) — 데스크톱 nominal 6.4 / ssi 6.5 ms (예산 20 ms, 초과 0%) · Jetson acados 빌드 절차 문서 | `c7f1c77` |
 | D-② | **E4(c) Jetson + 완화**: 기본 h30/rti8 = 37–38 ms 탈락(초과 100%, solve 지배·SSI 오버헤드 0.62 ms) → sim 검증 `e5_hwdrag_lat` 20셀에서 rti4_h20/h30 모두 무손실 (cycles 2.0, Δobj ≤ +1.1%; h30/rti8 ssi의 s2 이상치도 미재현) — **배포 후보 rti4_h20**, Jetson 재벤치만 남음 | `591a47f`, `dafa9d2` |
 | D-③ | **E4(c) 완성 + 배포 설정 확정**: Jetson h20/rti4 = 15.6–16.2 ms (p99 20.7, 초과 1.3–4.4% 허용) — 노드 기본값을 h20/rti4로 변경. ARMv8 BLASFEO 무효과 확인. SSI 적응 비용 0.6 ms/틱 = 사실상 공짜 (E4c 핵심 논거) | `8caed41` |
+| D-④ | **mj_ws 배포 워크스페이스** (`make_mj_ws.sh`): 순수 파이썬 marinelab 번들(2 MB) + 브리지 노드 + teleop auto 패치 + 런북(`mj_ws_README.md`)을 자급자족 조립 — Jetson에 rsync 후 colcon build·현장 구동 완료 (repo 클론 불필요) | `169c964` |
+| E-① | **시나리오 ② 체인 라이브니스 통과** (2026-08-16, 소형 아크릴 수조, 마커리스) + 현장 배선 버그 4종 수정 (침묵 게이트→로그+블라인드 앵커, 센서 QoS, 솔버 빌드 침묵, 매퍼 하트비트). `hw_bag_chain_liveness_20260816.py` | `39273ff`,`6c01a89`,`d5cbec0`,`075067c` |
+| E-② | **시나리오 ③ depth-hold 디버깅 캠페인** (2026-08-18, bag 6개): 근본원인을 순차 규명·수정 — ① 허구 수평 오차가 heave 지배(바닥 고착) → `depth_only`, ② IMU NED/마운트 규약(롤 ±180 → 심도 응답 반전) → `imu_mount_rpy_deg`, ③ 매퍼 미캘리브레이션(셸 인용 2회 사고) → 실측치 기본값화, ④ reach_eps 0.6 래치 → 0.05, ⑤ DVL 사망(아크릴)으로 EKF vz 동결 = MPC 감쇠 상실 → `vz_from_depth`, ⑥ **위상머신 순환**(z_top=z_bottom이면 도달 조건 항상 참 — 34 s에 49회 전환, SWAY 진입마다 z_ref 재래치 → 15 cm 리밋사이클) → `hold_z` 모드. 분석 스크립트 4개가 판정 기록. **hold_z 현장 검증 대기** | `52e757f`,`c2414fc`,`d502a7d`,`7ba53de`,`433760c`,`ce09488` |
 
 판정 총괄표 (5-시드 평균 objective, ↓):
 
@@ -101,8 +104,9 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
 - [x] Jetson 재벤치 (2026-08-16): **h20/rti4 = 15.6–16.2 ms (p99 20.7, 초과 ≤4.4%)
       → 배포 설정 확정**, 노드 기본값 반영. ARMv8 재빌드는 무효과 (h30/rti4
       19.9–20.5 ms, 탈락) — E4(c) 표 완성 (`jetson_acados_build.md` §5)
-- [ ] Jetson에 marinelab 체크아웃 + 브리지/컨트롤러 노드 colcon build
-      (절차: [`marinelab/ros/pkrc_wallscan_bridge/README.md`](../../../marinelab/ros/pkrc_wallscan_bridge/README.md))
+- [x] Jetson 노드 배포 — repo 체크아웃 대신 **mj_ws 번들 방식으로 완료** (D-④):
+      `make_mj_ws.sh`로 조립 → rsync → colcon build → 현장 세션 2회 구동 확인.
+      정본 절차: [`marinelab/ros/mj_ws_README.md`](../../../marinelab/ros/mj_ws_README.md)
 
 ### Phase E — 수조 실험 (E5 본실험)
 - [x] **시나리오 ② 체인 라이브니스 (2026-08-16, 소형 아크릴 수조, 마커리스) — 통과**:
@@ -112,7 +116,11 @@ s(스캔 진행도)가 미보정 적분기로 남는 것"으로 코드 수준에
       앵커, 센서 QoS BEST_EFFORT 매칭, 솔버 빌드 중 침묵, 매퍼 하트비트 부재로
       auto 즉시 이탈). 마커리스 x/y는 예상대로 허구 — ③은 마커 필수.
       `hw_bag_chain_liveness_20260816.py`
-- [ ] 시나리오 ③ depth-hold 폐루프 (소형 수조, 마커 리깅) — mj_ws README §9
+- [ ] 시나리오 ③ depth-hold 폐루프 (소형 수조) — **진행 중** (E-② 캠페인으로
+      근본원인 7개 수정 완료, `hold_z`+`depth_only` 조합의 현장 합격 bag만 남음;
+      마커리스 변형이 정본, 마커 리깅되면 본문 승격) — mj_ws README §9.
+      합격 기준: 잔여 진동 ±2–3 cm (데드존 릴레이 한계 — 필요 정적힘 0.24 N <
+      데드존 통과 최소 실현힘 0.37 N이라 완전 정지는 구조적으로 불가), heave u 비포화
 - [ ] 탱크-마커 캘리브레이션 측량 (`marker_x/y/yaw` 파라미터)
 - [ ] 마커 가시성 스캔 심도 전 구간 확인 (실측 한계 7 m 전제의 현장 검증)
 - [ ] 단계적 폐루프: depth-hold → wall-align → wallscan
