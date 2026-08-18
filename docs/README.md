@@ -1,8 +1,9 @@
 # docs/ 안내 — 읽는 순서와 전체 진행 현황
 
-> 처음 이 프로젝트를 받은 사람은 이 문서부터. 마지막 갱신: 2026-08-09 (커밋 기준
-> `672f375` 이후). 실험 프레임워크 산출물은 전부 `experimental_results/`에 있고,
-> 실행 방법은 `marinelab/scripts/experiments/README.md`가 정본이다.
+> 처음 이 프로젝트를 받은 사람은 이 문서부터. 마지막 갱신: 2026-08-18
+> (`feature/sim-to-real` 브랜치). 실험 프레임워크 산출물은 전부
+> `experimental_results/`에 있고, 실행 방법은
+> `marinelab/scripts/experiments/README.md`가 정본이다.
 
 ## 1. 읽는 순서
 
@@ -14,7 +15,8 @@
 | ④ | `docs/experiments/tuning_history/experiment_work_directives.md` | **실행 지침** — 분기 규칙, red-flag 규칙, 오염 사례 |
 | ⑤ | `docs/experiments/tuning_history/bo_tuning_history.md` / `docs/experiments/tuning_history/ssi_tuning_history.md` | 튜닝 여정 (논문 실험 섹션 소스) |
 | ⑥ | `docs/experiments/validation_report.md` | 결과 타당성 검증 (문헌 패턴 P1–P6 대조) |
-| ⑦ | `docs/diff_wmpc_port_todo.md` | **다음 작업** — diff 이식→실험 완료 단계별 TODO |
+| ⑦ | `docs/diff_wmpc_port_todo.md` | **다음 작업 (diff 축)** — diff 이식→실험 완료 단계별 TODO (타 머신 모델 대기) |
+| ⑧ | `docs/experiments/sim-to-real/README.md` | **다음 작업 (E5 축)** — sim-to-real 레저: HW 식별·Jetson 배포·수조 실험 진행 내역/계획 |
 | 참조 | `marinelab/scripts/experiments/README.md`, `docker/README.md`, `CLAUDE.md` | 러너 사용법 / 호스트 런타임 / 세션 규칙 |
 
 ## 2. 완료된 작업 (experiments_plan.md · work_directives 대응 체크리스트)
@@ -45,7 +47,7 @@
 | E4(a) ablation | — | — | — | — | **[ ] 설정 미작성** |
 | E4(b) 튜닝 비용 | [x] | [x] | [x] | W&B 기록 | [ ] 학습비용 수령 |
 | E4 부록 민감도 (11×5) | — | — | [x] | — | — |
-| E4(c) 추론 벤치 (Jetson) | [ ] | [ ] | [ ] | [ ] | [ ] |
+| E4(c) 추론 벤치 (Jetson) | [x] | (nominal과 동일 솔버) | [x] | — | — |
 | E5 하드웨어 | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 ### 그림·표
@@ -61,10 +63,13 @@
    red-flag 판정 기준.
 2. **E2(b) 온라인 fine-tune** (`finetune_diff_wmpc.py` 신설) → **F5**
 3. **E4(a) ablation** (`e4_ablation.yaml` 신설; 학습 변형 필요 축은 타 머신과 협의)
-4. E4(c) Jetson 추론 벤치 (`bench_inference.py`, isaaclab 무의존 — Jetson에서 실행)
+4. ~~E4(c) Jetson 추론 벤치~~ — **완료 (2026-08-16)**: 배포 설정 h20/rti4 =
+   15.6–16.2 ms, SSI 적응 0.6 ms/틱. `docs/experiments/sim-to-real/README.md` D-①~③
 5. (선택) E4 민감도를 E3 조류 조건에서 반복 — validation_report §2-E4의 권고
-6. (별도 축) 상태소스 `state: ekf` 실험 — 현재 전 실험이 GT 상태(Phase 2a) 기준
-7. E5 하드웨어 이식 — `competitor_framework_plan.md` §8 체크리스트
+6. (별도 축) 상태소스 `state: ekf` 실험 — e5_ekf 프리체크로 게이트는 통과
+   (sim-to-real README B-0~B-5); 본 매트릭스 반복은 별도 결정
+7. **E5 하드웨어 — 진행 중** (`feature/sim-to-real`): HW 식별·Jetson 배포 완료,
+   수조 폐루프 검증 중 — 정본은 `docs/experiments/sim-to-real/README.md`
 
 ## 4. 판정 기준치 요약 (다음 세션이 바로 쓸 수 있게)
 

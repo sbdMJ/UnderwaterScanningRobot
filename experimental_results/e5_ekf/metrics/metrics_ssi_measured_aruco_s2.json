@@ -1,0 +1,79 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.751283586025238,
+  "tilt_sway_deg": 1.3256722688674927,
+  "tilt_deg": 0.8048412799835205,
+  "crab_deg": 3.061927556991577,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.20036030095168078,
+  "sway_speed_mps": 0.10732784956515193,
+  "heave_path_speed_mps": 0.20036030095168078,
+  "sway_path_speed_mps": 0.10733059066498352,
+  "heave_legs_scored": 3,
+  "sway_legs_scored": 4,
+  "wall_dist_err_cm": 17.205147445201874,
+  "cycles_mean": 2.0,
+  "cycles_per_env": [
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e5_ekf",
+  "method": "ssi",
+  "cond": "measured_aruco",
+  "seed": 2,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "tam": "fixed",
+    "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
+    "ssi_lr": 0.14733286466312384,
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 7.221090821677838,
+    "solve_ms_p95": 7.552303700867924,
+    "solve_ms_max": 120.09503100125585,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.03077777777777778
+  },
+  "score": {
+    "objective": 11932.82372971993,
+    "collided": false,
+    "scored_losses": [
+      11932.82372971993
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.0139886328359884,
+    "phi_rmse_deg": 1.598461622600007,
+    "s_rmse_m": 1.0220199633178537
+  }
+}

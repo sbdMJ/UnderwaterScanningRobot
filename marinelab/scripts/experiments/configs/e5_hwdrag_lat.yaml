@@ -1,0 +1,42 @@
+# Latency-mitigation sim check for E4(c): the Jetson bench measured 37-38 ms/tick
+# at the default horizon 30 / RTI 8 (bench_jetson.json) — 100% over the 20 ms
+# budget, solve-dominated. Before deploying reduced solver settings we verify on
+# the go condition (e5_hwdrag's hwdrag_trim: measured drag + 1 kg... now 0.5 kg
+# trim, still the recorded -1 N condition for comparability) that they do not
+# degrade scan performance. Control: e5_hwdrag hwdrag_trim at h30/rti8
+# (nominal 7,595 / ssi 12,524, cycles 2.0).
+exp: e5_hwdrag_lat
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  max_thrust: 3.68
+  damping_scale_xyz: [0.175, 0.151, 0.34]
+  residual_buoyancy_n: -1.0
+
+conditions:
+  # candidate deploy setting: expected ~12 ms/tick on the Jetson (solve ~ linear
+  # in RTI iters and roughly linear in horizon)
+  rti4_h20:
+    rti_iters: 4
+    horizon: 20
+  # fallback if a BLASFEO-target rebuild buys enough: halving RTI alone
+  rti4_h30:
+    rti_iters: 4
+
+methods:
+  nominal:
+    tam: fixed
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]

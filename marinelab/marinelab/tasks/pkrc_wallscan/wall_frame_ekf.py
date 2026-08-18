@@ -238,6 +238,12 @@ class WallFrameEKFCfg:
     sonar_yaw_offset: float = 0.0
     r_ukfm_r: float = 0.05
     r_ukfm_phi: float = 0.05
+    # Noise on the arc-length pseudo-measurement derived from the fix's absolute bearing
+    # (s_meas = s_hat + R*wrap(theta_meas - theta_hat), see estimator.py). A 6.5 cm xy fix
+    # error at r ~ 4.5 m is a 1.4e-2 rad bearing error, i.e. ~9 cm of arc at R = 6 —
+    # measured from the marker-visible 2026-08-06 bag (docs/experiments/
+    # hw_sensor_characterization.md addendum).
+    r_ukfm_s: float = 0.10
     # Innovation gate in sonar-sigma units: a first return off a curved wall at a large beam
     # offset is unreliable, so reject outliers rather than let one bad ping move the state.
     gate_sigma: float = 4.0
@@ -335,16 +341,29 @@ class WallFrameEKF:
         self.n_sonar += 1
         return True
 
-    def update_ukfm(self, r_meas: float, phi_meas: float) -> None:
+    def update_ukfm(self, r_meas: float, phi_meas: float, s_meas: float | None = None) -> None:
         """Absolute reset from the surface-marker fix. Only call while UKF-M reports valid.
 
         This is the only place absolute information enters, and the whole point of the
         wall-relative formulation is that it is optional: without it the filter still runs on
         sonar + DVL + gyro, it just accumulates gyro bias over the unexcited vertical legs.
+
+        ``s_meas`` (2026-08-09): the fix's absolute BEARING resolved into arc length by the
+        caller (``estimator.py``: ``s_hat + R*wrap(theta_meas - theta_hat)``). Without it, ``s``
+        is the one state no measurement ever corrects — a pure DVL integrator whose bias drift
+        was measured at 67-112 cm RMSE on the bad e5_ekf seeds and reproduced the same
+        objective blow-up (5x/7x common-mode) in nominal AND ssi. An absolute xy fix knows
+        theta, so discarding it was the estimator's real sim-to-real blocker.
         """
-        H = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        R = np.diag([self.cfg.r_ukfm_r**2, self.cfg.r_ukfm_phi**2])
-        innov = np.array([r_meas - self.x[0], _wrap(phi_meas - self.x[1])])
+        if s_meas is None:
+            H = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+            R = np.diag([self.cfg.r_ukfm_r**2, self.cfg.r_ukfm_phi**2])
+            innov = np.array([r_meas - self.x[0], _wrap(phi_meas - self.x[1])])
+        else:
+            H = np.eye(3)
+            R = np.diag([self.cfg.r_ukfm_r**2, self.cfg.r_ukfm_phi**2, self.cfg.r_ukfm_s**2])
+            innov = np.array([r_meas - self.x[0], _wrap(phi_meas - self.x[1]),
+                              s_meas - self.x[2]])
         S = H @ self.P @ H.T + R
         K = self.P @ H.T @ np.linalg.inv(S)
         self.x = self.x + K @ innov
@@ -353,13 +372,14 @@ class WallFrameEKF:
         self.n_ukfm += 1
 
     def step(self, *, v_bx: float, v_by: float, gyro_z: float, dt: float,
-             sonar: float | None = None, ukfm: tuple[float, float] | None = None) -> None:
+             sonar: float | None = None, ukfm: tuple[float, float] | None = None,
+             ukfm_s: float | None = None) -> None:
         """One predict + available corrections, in the order a real loop would run them."""
         self.predict(v_bx, v_by, gyro_z, dt)
         if sonar is not None:
             self.update_sonar(sonar)
         if ukfm is not None:
-            self.update_ukfm(*ukfm)
+            self.update_ukfm(ukfm[0], ukfm[1], ukfm_s)
 
 
 def _wrap(a: float) -> float:

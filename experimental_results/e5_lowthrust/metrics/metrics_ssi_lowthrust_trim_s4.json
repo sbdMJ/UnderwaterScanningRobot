@@ -1,0 +1,83 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.5478935837745667,
+  "tilt_sway_deg": 1.0015932321548462,
+  "tilt_deg": 0.5604487061500549,
+  "crab_deg": 2.3855395317077637,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": NaN,
+  "sway_speed_mps": 0.07287338376045227,
+  "heave_path_speed_mps": NaN,
+  "sway_path_speed_mps": 0.07548868175475829,
+  "heave_legs_scored": 0,
+  "sway_legs_scored": 1,
+  "wall_dist_err_cm": 11.404438316822052,
+  "cycles_mean": 0.0,
+  "cycles_per_env": [
+    0.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e5_lowthrust",
+  "method": "ssi",
+  "cond": "lowthrust_trim",
+  "seed": 4,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "ukfm_theta": true,
+    "ukfm_max_depth": 7.0,
+    "max_thrust": 3.68,
+    "residual_buoyancy_n": 0.9,
+    "tam": "fixed",
+    "params_json": "experimental_results/tuning/bo_nmpc/best_params.json",
+    "ssi_lr": 0.14733286466312384,
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 9.463800914019682,
+    "solve_ms_p95": 11.19320689467713,
+    "solve_ms_max": 126.64217498968355,
+    "fail_frac": 0.0,
+    "saturated_frac": 1.0
+  },
+  "score": {
+    "objective": 110098.19689874066,
+    "collided": false,
+    "scored_losses": [
+      110098.19689874066
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.023352590951829844,
+    "phi_rmse_deg": 2.463304729209207,
+    "s_rmse_m": 0.17371280803230602
+  }
+}

@@ -21,6 +21,9 @@ _LAZY = {
     "PPOPolicyController": ".ppo_policy",
     "SensorSample": ".estimator",
     "WallFrameStateEstimator": ".estimator",
+    "TankCalib": ".hw_bridge",
+    "TopicSampleAssembler": ".hw_bridge",
+    "WallScanControlLoop": ".scan_loop",
 }
 
 __all__ = list(_LAZY)

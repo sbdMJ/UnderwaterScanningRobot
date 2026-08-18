@@ -37,16 +37,17 @@ from marinelab.control import (
     SensorSample,
     VehicleState,
     WallFrameStateEstimator,
+    WallScanControlLoop,
 )
-from marinelab.control.types import ScanReference
 from marinelab.experiments.env_variants import CurrentDriver, apply_fluid_dr_scale
 from marinelab.experiments.protocol import ExperimentCell
 from marinelab.experiments.scoring import ScoreAccumulator
 from marinelab.tasks.pkrc_wallscan import eval_metrics as em
-from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref, scan_state_machine as ssm
+from marinelab.tasks.pkrc_wallscan import geometry, mpc_reference as mref
 from marinelab.tasks.pkrc_wallscan.mpc_controller import PlantParams
 from marinelab.tasks.pkrc_wallscan.sensors import (
-    SensorCfg, SensorCfgDatasheet, _body_up, att_noise, gyro_noise, ukfm_in_range,
+    SensorCfg, SensorCfgDatasheet, SensorCfgHW2026Bag, SensorCfgHW2026BagAruco, SensorRateGate,
+    _body_up, att_noise, gyro_noise, ukfm_in_range,
 )
 from marinelab.tasks.pkrc_wallscan.wall_frame_ekf import WallFrameEKFCfg
 from marinelab.tasks.pkrc_wallscan.wallscan_env_cfg import (
@@ -97,6 +98,25 @@ def build_env(cell: ExperimentCell):
         cfg.hydrodynamics = PKRCHydrodynamicsCfg()
     if "dr_fluid_scale" in opt:  # E2 sweep: rescale the fluid-coefficient DR half-range
         apply_fluid_dr_scale(cfg, float(opt["dr_fluid_scale"]))
+    # E5 low-authority conditions (docs/experiments/sim-to-real/thruster_mapping.md §4d).
+    # Both knobs act on the env cfg BEFORE construction, so PlantParams.from_env reads the
+    # same values back (t.cfg.thrust_coefficient / h.buoyancy_force) and the controller
+    # model stays consistent with the plant automatically.
+    if "max_thrust" in opt:  # measured drivetrain limit: |u|=1 <-> this many newtons
+        cfg.thrusters.thrust_coefficient = float(opt["max_thrust"])
+    if "residual_buoyancy_n" in opt:  # trim displaced volume to a measured net buoyancy
+        cfg.hydrodynamics.volume = (
+            float(cfg.hydrodynamics.body_mass) + float(opt["residual_buoyancy_n"]) / 9.81
+        ) / float(cfg.hydrodynamics.water_density)
+    if "damping_scale_xyz" in opt:  # measured translational drag (§4f/§4g): one scale
+        # per axis applied to BOTH d1 and d2 (a single force level per axis cannot
+        # separate them, so the measured operating point pins the combined curve)
+        sxyz = [float(v) for v in opt["damping_scale_xyz"]]
+        for name in ("linear_damping", "quadratic_damping"):
+            base = list(getattr(cfg.hydrodynamics, name))
+            for i, s in enumerate(sxyz):
+                base[i] *= s
+            setattr(cfg.hydrodynamics, name, tuple(base))
     return gym.make(task, cfg=cfg).unwrapped, cfg
 
 
@@ -148,21 +168,33 @@ def build_controller(cell: ExperimentCell, env, cfg):
 class SimSensorStream:
     """Synthesize SensorSample streams from GT — port of run_wallscan_mpc's --state ekf block."""
 
+    _SCFG = {"placeholder": SensorCfg, "datasheet": SensorCfgDatasheet,
+             "hw2026bag": SensorCfgHW2026Bag, "hw2026bag_aruco": SensorCfgHW2026BagAruco}
+
     def __init__(self, cfg, opt: dict, seed: int):
-        scfg_cls = SensorCfgDatasheet if opt.get("sensors", "placeholder") == "datasheet" else SensorCfg
+        scfg_cls = self._SCFG[opt.get("sensors", "placeholder")]
         self.scfg = scfg_cls(ukfm_gate=opt.get("ukfm_gate", "depth_below_surface"),
                              ukfm_surface_z=cfg.tank_height)
+        if "ukfm_max_depth" in opt:  # measured marker-visibility limit (e.g. 7 m, 2026-08-09)
+            self.scfg.ukfm_valid_max_depth = float(opt["ukfm_max_depth"])
         # Bias half-ranges are DR knobs (0 in Stage3); the estimator condition needs them on.
-        if scfg_cls is SensorCfgDatasheet:
-            self.scfg.sonar_bias_dr = SensorCfgDatasheet.sonar_bias_dr
-            self.scfg.ins_att_bias_dr = SensorCfgDatasheet.ins_att_bias_dr
+        # A 34 s bag cannot see per-run constants, so hw2026bag keeps the datasheet biases.
+        if issubclass(scfg_cls, SensorCfgDatasheet):
+            self.scfg.sonar_bias_dr = scfg_cls.sonar_bias_dr
+            self.scfg.ins_att_bias_dr = scfg_cls.ins_att_bias_dr
         else:
             self.scfg.sonar_bias_dr = 0.10
             self.scfg.ins_att_bias_dr = 0.04
         self.scfg.depth_bias_dr = 0.10
         self.scfg.dvl_bias_dr = 0.01
         self.gyro_bias = float(opt.get("gyro_bias", self.scfg.ins_gyro_bias_dr
-                                       if scfg_cls is SensorCfgDatasheet else 0.02))
+                                       if issubclass(scfg_cls, SensorCfgDatasheet) else 0.02))
+        self.gate = SensorRateGate(self.scfg)
+        self._held: dict = {}
+        # The marker fix knows its absolute bearing; emitting it lets the EKF correct the
+        # arc-length state (the one integrator nothing else corrects — see wall_frame_ekf.
+        # update_ukfm). False reproduces the pre-fix estimator (e5_ekf cells before 2026-08-09).
+        self.ukfm_theta = bool(opt.get("ukfm_theta", True))
         self.gyro_noise_std = gyro_noise(self.scfg)
         self.rng = np.random.default_rng(seed)
         self.tank_radius = cfg.tank_radius
@@ -170,6 +202,8 @@ class SimSensorStream:
         self.redraw_bias()
 
     def redraw_bias(self) -> None:
+        self.gate.reset()
+        self._held.clear()
         s, rng = self.scfg, self.rng
         self.bias = {
             "sonar": float(rng.uniform(-s.sonar_bias_dr, s.sonar_bias_dr)) if s.sonar_bias_dr else 0.0,
@@ -196,19 +230,43 @@ class SimSensorStream:
             pos[:, :2], yaw, env._sonar_mount_nom, env._sonar_yaw_nom, self.tank_radius)[0])
         v_b = env._robot.data.root_lin_vel_b[0]
         w_b = env._robot.data.root_ang_vel_b[0]
-        v_meas = v_b[:2].cpu().numpy() + rng.normal(0, s.dvl_noise, 2) + self.bias["dvl"]
+
+        # Rate-and-hold (docs/experiments/hw_sensor_characterization.md §2): a real DVL/depth
+        # reading persists until the sensor produces a new one, so prediction inputs HOLD;
+        # sonar/UKF-M are measurement updates, so between fresh readings they are absent
+        # (None) rather than re-applied — one echo must not correct the filter five times.
+        if self.gate.fresh("dvl", stamp) or "dvl" not in self._held:
+            self._held["dvl"] = (v_b[:2].cpu().numpy() + rng.normal(0, s.dvl_noise, 2)
+                                 + self.bias["dvl"], float(v_b[2]))
+        v_meas, v_bz = self._held["dvl"]
+
+        if self.gate.fresh("depth", stamp) or "depth" not in self._held:
+            self._held["depth"] = (float(pos[0, 2]) + float(rng.normal(0, s.depth_noise))
+                                   + self.bias["depth"])
+        depth = self._held["depth"]
+
+        sonar = None
+        if self.gate.fresh("sonar", stamp):
+            sonar = sonar_true + float(rng.normal(0, s.sonar_noise)) + self.bias["sonar"]
+
         ukfm = None
-        if bool(ukfm_in_range(pos[:, 2], s)[0]):
+        if bool(ukfm_in_range(pos[:, 2], s)[0]) and self.gate.fresh("ukfm", stamp):
+            # The fix also carries the absolute bearing theta; its error is the xy fix error
+            # seen at radius r (a 6.5 cm fix at r=4.5 m is ~1.4e-2 rad), not ukfm_noise itself.
             ukfm = (truth["r"] + float(rng.normal(0, s.ukfm_noise)),
                     truth["phi"] + float(rng.normal(0, s.ukfm_noise)))
+            if self.ukfm_theta:
+                theta_true = float(torch.atan2(pos[0, 1], pos[0, 0]))
+                ukfm += (theta_true + float(rng.normal(0, s.ukfm_noise / max(truth["r"], 1.0))),)
+
         sample = SensorSample(
             v_bx=float(v_meas[0]), v_by=float(v_meas[1]),
             gyro_z=float(w_b[2]) + float(rng.normal(0, self.gyro_noise_std)) + self.gyro_bias,
-            sonar=sonar_true + float(rng.normal(0, s.sonar_noise)) + self.bias["sonar"],
-            depth=float(pos[0, 2]) + float(rng.normal(0, s.depth_noise)) + self.bias["depth"],
+            sonar=sonar,
+            depth=depth,
             roll=float(roll_t[0]) + float(rng.normal(0, att_noise(s))) + self.bias["att"][0],
             pitch=float(pitch_t[0]) + float(rng.normal(0, att_noise(s))) + self.bias["att"][1],
-            v_bz=float(v_b[2]), gyro_x=float(w_b[0]), gyro_y=float(w_b[1]),
+            v_bz=v_bz, gyro_x=float(w_b[0]), gyro_y=float(w_b[1]),
             ukfm=ukfm, stamp=stamp,
         )
         return sample, truth
@@ -234,10 +292,12 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     dev, dt = env.device, env.step_dt
     use_ekf = opt.get("state", "gt") == "ekf"
     scan_cfg = cfg.scan
-    state_sm = ssm.ScanState(1, device=dev)
+    # The controller-owned loop (state machine + preview + controller) is the shared
+    # sim/hardware core — the wallscan_controller ROS node drives the same object.
+    loop = WallScanControlLoop(ctl, scan_cfg, mpc_cfg,
+                               horizon=int(opt.get("horizon", 30)), device="cpu")
     s_gt = torch.zeros(1, device=dev)
     theta_prev = torch.zeros(1, device=dev)
-    cycles = torch.zeros(1, dtype=torch.long, device=dev)
     stream = SimSensorStream(cfg, opt, cell.seed) if use_ekf else None
     estimator = WallFrameStateEstimator(WallFrameEKFCfg(
         tank_radius=cfg.tank_radius,
@@ -254,17 +314,11 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
     def reset_internal():
         pos, _, yaw = gt_pose()
         theta = torch.atan2(pos[:, 1], pos[:, 0])
-        state_sm.phase[:] = 0
-        state_sm.s_ref[:] = 0.0
-        state_sm.sway_dir[:] = 1.0
-        state_sm.z_hold[:] = 0.0
-        state_sm._hold[:] = 0
-        state_sm.z_ramp[:] = pos[:, 2]
-        state_sm.s_ramp[:] = 0.0
+        # z0 anchors the reference ramp at ground truth; the controller itself still
+        # resets from a zero state, exactly as before the loop extraction.
+        loop.reset(veh=None, z0=float(pos[0, 2]))
         s_gt[:] = 0.0
-        cycles[:] = 0
         theta_prev[:] = theta
-        ctl.reset(VehicleState.from_x13(np.zeros(13)))
         if use_ekf:
             stream.redraw_bias()
             estimator.reset(r0=float(torch.linalg.norm(pos[0, :2])),
@@ -298,30 +352,18 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             est_err["phi"].append(float(mref._wrap_to_pi(
                 torch.tensor(estimator.ekf.phi - truth["phi"]))))
             est_err["s"].append(estimator.s_hat - float(s_gt[0]))
-            z_sm = torch.tensor([veh.pos_w[2]], device=dev)
-            s_sm = torch.tensor([estimator.s_hat], device=dev)
-            theta_anchor, s_anchor = estimator.theta_hat, estimator.s_hat
+            s_hat, theta_hat = estimator.s_hat, estimator.theta_hat
         else:
             x13 = torch.cat([pos, quat,
                              env._robot.data.root_lin_vel_b,
                              env._robot.data.root_ang_vel_b], dim=-1)[0].cpu().numpy()
             veh = VehicleState.from_x13(x13, stamp=i * dt)
-            z_sm, s_sm = pos[:, 2], s_gt
-            theta_anchor, s_anchor = float(theta[0]), float(s_gt[0])
+            s_hat, theta_hat = float(s_gt[0]), float(theta[0])
 
-        z_ref, s_ref, _phase_sc, advanced = ssm.step(state_sm, z_sm, s_sm, scan_cfg, z_latch=z_sm)
-        cycles += (advanced & (state_sm.phase == 0)).long()
-        preview = mref.reference_preview(
-            state_sm.phase, state_sm.z_ramp, state_sm.s_ramp, state_sm.s_ref, state_sm.z_hold,
-            mpc_cfg, int(cell.options.get("horizon", 30)),
-        )
-        ref = ScanReference(
-            z_ref=preview["z_ref"][0].cpu().numpy(), s_ref=preview["s_ref"][0].cpu().numpy(),
-            v_tan_des=preview["v_tan_des"][0].cpu().numpy(),
-            v_z_des=preview["v_z_des"][0].cpu().numpy(),
-            theta_anchor=theta_anchor, s_anchor=s_anchor, phase=int(state_sm.phase[0]),
-        )
-        out = ctl.step(veh, ref)
+        out = loop.step(veh, s_hat=s_hat, theta_hat=theta_hat)
+        z_ref_f, s_ref_f = loop.refs
+        z_ref = torch.tensor([z_ref_f], device=dev)
+        s_ref = torch.tensor([s_ref_f], device=dev)
         for k, v in out.aux.items():  # per-step method diagnostics -> npz (aux_* keys)
             arr = np.atleast_1d(np.asarray(v, float))
             if arr.ndim == 1:
@@ -340,7 +382,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
         wall_dist = geometry.sonar_wall_distance(
             pos_n[:, :2], yaw_n, env._sonar_mount_nom, env._sonar_yaw_nom, cfg.tank_radius)
         log.record(
-            phase=state_sm.phase, cycles=cycles,
+            phase=loop.sm.phase, cycles=torch.tensor([loop.cycles], device=dev),
             searching=torch.zeros(1, dtype=torch.bool, device=dev),
             done=dones, terminated=env.reset_terminated, time_out=env.reset_time_outs,
             term_collided=env._term_collided, term_oob=env._term_oob, term_tilted=env._term_tilted,
@@ -354,7 +396,7 @@ def run_mpc_cell(cell: ExperimentCell, env, cfg, ctl, steps: int, mpc_cfg,
             reset_internal()
             prev_z_ref = prev_s_ref = None
         if log_every and i % log_every == 0:
-            print(f"  t={i * dt:6.1f}s ph={int(state_sm.phase[0])} z={float(pos_n[0, 2]):5.2f} "
+            print(f"  t={i * dt:6.1f}s ph={loop.phase} z={float(pos_n[0, 2]):5.2f} "
                   f"s={float(s_gt[0]):+6.2f} solve={out.solve_ms:.1f}ms")
 
     extras = {"aux_arrays": {f"aux_{k}": np.stack(v) for k, v in aux_hist.items()}}

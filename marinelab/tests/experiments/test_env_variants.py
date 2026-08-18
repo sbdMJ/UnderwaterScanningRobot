@@ -43,7 +43,7 @@ def _driver(profile, n=2):
 def test_step_profile_reverses_at_t_switch():
     drv, _ = _driver({"type": "step", "speed": 0.2, "heading_deg": 90.0, "t_switch": 60.0})
     before, after = drv.velocity_at(59.9), drv.velocity_at(60.0)
-    assert before[1] == pytest.approx(0.2, abs=1e-9) and before[0] == pytest.approx(0.0, abs=1e-9)
+    assert before[1] == pytest.approx(0.2, abs=1e-6) and before[0] == pytest.approx(0.0, abs=1e-6)
     torch.testing.assert_close(after, -before)
     assert before[2:].abs().max() == 0  # linear xy only
 

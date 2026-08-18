@@ -1,0 +1,43 @@
+# E5 low-authority check: can the wallscan run on the MEASURED drivetrain?
+# 2026-08-11 bollard pull (docs/experiments/sim-to-real/thruster_mapping.md §4d):
+# at the teleop 3 A clamp a thruster tops out at ~3.68 N vs the 40 N every sim
+# result was produced with. Protocol is otherwise IDENTICAL to e5_ekf's go/no-go
+# condition (measured_aruco_sfix_vis7) so the recorded 40 N cells are the control:
+#   ssi 786 / nominal 1020 (5-seed mean objective), cycles 2.0.
+# Both knobs flow through build_env into the env cfg BEFORE construction, so
+# PlantParams.from_env keeps the controller model consistent with the plant.
+exp: e5_lowthrust
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  # measured limit, min over thrusters of k_i x (amps_limit_i - I0_i); the heave pair
+  # could do ~7.1 N at 5 A but the deployed mapper is scalar-bounded, so sim matches.
+  max_thrust: 3.68
+
+conditions:
+  # Sim buoyancy trim as shipped: ~4.9 N net positive (0.5 kgf design guess) — the
+  # heave pair's static load is then 67% of its 7.36 N authority. HARSHER than the
+  # real vehicle, kept as the pessimistic bound.
+  lowthrust: {}
+  # Net buoyancy set to the measured bound (<0.9 N: the robot descended readily on
+  # ~0.9 N of pair thrust, 2026-08-11 in-water check) — the honest digital twin.
+  lowthrust_trim:
+    residual_buoyancy_n: 0.9
+
+methods:
+  nominal:
+    tam: fixed
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]

@@ -52,6 +52,15 @@ if [ -d "$ACADOS_HOST" ]; then
   )
 fi
 
+# Per-worker private isaaclab/logs mount: parallel experiment cells race on the acados
+# codegen dir (isaaclab/logs/c_generated_code_wallscan) if they share the repo mount, so
+# a runner can point each worker at its own host dir via UWS_LOGS_MOUNT.
+LOGS_ARGS=()
+if [ -n "${UWS_LOGS_MOUNT:-}" ]; then
+  mkdir -p "$UWS_LOGS_MOUNT"
+  LOGS_ARGS=(-v "$UWS_LOGS_MOUNT":"$REPO_CTR/isaaclab/logs":rw)
+fi
+
 GUI_ARGS=()
 if [ "$GUI" = "1" ]; then
   : "${DISPLAY:?--gui needs DISPLAY set (run it from a desktop session, not a bare ssh shell)}"
@@ -86,6 +95,7 @@ docker run --rm "${TTY_FLAGS[@]}" \
   ${ACADOS_ARGS[@]+"${ACADOS_ARGS[@]}"} \
   ${GUI_ARGS[@]+"${GUI_ARGS[@]}"} \
   -v "$REPO_HOST":"$REPO_CTR":rw \
+  ${LOGS_ARGS[@]+"${LOGS_ARGS[@]}"} \
   -v "$CACHE/cache/kit":/isaac-sim/kit/cache:rw \
   -v "$CACHE/cache/ov":/root/.cache/ov:rw \
   -v "$CACHE/cache/pip":/root/.cache/pip:rw \

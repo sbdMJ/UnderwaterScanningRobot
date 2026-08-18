@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 600" font-family="'Noto Sans KR','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#c0392b"/>
+    </marker>
+    <marker id="arrDim" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="#2c3e50"/>
+    </marker>
+    <marker id="arrMom" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 z" fill="#e67e22"/>
+    </marker>
+    <pattern id="hatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#95a5a6"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#5d6d7e" stroke-width="3"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="600" fill="#ffffff"/>
+  <text x="470" y="34" text-anchor="middle" font-size="20" font-weight="bold" fill="#2c3e50">bollard pull 브라이들 리깅 — 위에서 본 모습</text>
+
+  <!-- thrust axis (centerline) -->
+  <line x1="80" y1="290" x2="900" y2="290" stroke="#b0bec5" stroke-width="1.5" stroke-dasharray="7,6"/>
+  <text x="885" y="278" text-anchor="end" font-size="13" fill="#78909c">추력 축(당김 라인과 일직선, 수평)</text>
+
+  <!-- anchor wall -->
+  <rect x="52" y="140" width="20" height="300" fill="url(#hatch)" stroke="#5d6d7e"/>
+  <text x="62" y="128" text-anchor="middle" font-size="15" fill="#2c3e50">고정점</text>
+  <text x="62" y="460" text-anchor="middle" font-size="13" fill="#5d6d7e">(수조 프레임)</text>
+
+  <!-- single line: anchor - scale - ring -->
+  <line x1="72" y1="290" x2="140" y2="290" stroke="#2c3e50" stroke-width="3.5"/>
+  <rect x="140" y="268" width="92" height="44" rx="8" fill="#fdf2cc" stroke="#b7950b" stroke-width="2"/>
+  <text x="186" y="296" text-anchor="middle" font-size="17" font-weight="bold" fill="#7d6608">저울</text>
+  <line x1="232" y1="290" x2="326" y2="290" stroke="#2c3e50" stroke-width="3.5"/>
+  <text x="279" y="330" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a5276">판독값 = 합력 = F</text>
+  <text x="279" y="348" text-anchor="middle" font-size="12.5" fill="#1a5276">(모멘트와 무관)</text>
+
+  <!-- apex ring -->
+  <circle cx="336" cy="290" r="9" fill="#ffffff" stroke="#2c3e50" stroke-width="3"/>
+  <text x="336" y="264" text-anchor="middle" font-size="14" fill="#2c3e50">링(합류점)</text>
+
+  <!-- bridle legs: upper carries more tension (thruster offset is on the upper side) -->
+  <line x1="344" y1="284" x2="488" y2="180" stroke="#2c3e50" stroke-width="5"/>
+  <line x1="344" y1="296" x2="488" y2="400" stroke="#2c3e50" stroke-width="2"/>
+  <text x="398" y="212" text-anchor="middle" font-size="14.5" font-weight="bold" fill="#2c3e50">레그 A · 장력 큼</text>
+  <text x="404" y="374" text-anchor="middle" font-size="14.5" fill="#2c3e50">레그 B · 장력 작음</text>
+
+  <!-- robot body (top view) -->
+  <rect x="488" y="170" width="320" height="240" rx="18" fill="#eaf2f8" stroke="#2874a6" stroke-width="2.5"/>
+  <text x="648" y="398" text-anchor="middle" font-size="15" fill="#2874a6">로봇 (top view)</text>
+  <circle cx="488" cy="180" r="6" fill="#2c3e50"/>
+  <circle cx="488" cy="400" r="6" fill="#2c3e50"/>
+  <text x="503" y="176" font-size="13.5" fill="#2c3e50">부착점 A</text>
+  <text x="503" y="418" font-size="13.5" fill="#2c3e50">부착점 B</text>
+
+  <!-- attachment spacing w -->
+  <line x1="462" y1="180" x2="462" y2="400" stroke="#2c3e50" stroke-width="1.5" marker-start="url(#arrDim)" marker-end="url(#arrDim)"/>
+  <text x="450" y="295" text-anchor="end" font-size="15" font-weight="bold" fill="#2c3e50">w</text>
+  <text x="450" y="313" text-anchor="end" font-size="12.5" fill="#5d6d7e">≥ 0.5 m 권장</text>
+
+  <!-- thruster at lateral offset d (upper side) -->
+  <rect x="808" y="212" width="34" height="36" rx="5" fill="#d5dbdb" stroke="#2c3e50" stroke-width="2"/>
+  <text x="825" y="205" text-anchor="middle" font-size="14" fill="#2c3e50">측정 스러스터</text>
+
+  <!-- thrust arrow -->
+  <line x1="842" y1="230" x2="922" y2="230" stroke="#c0392b" stroke-width="5" marker-end="url(#arr)"/>
+  <text x="880" y="216" text-anchor="middle" font-size="18" font-weight="bold" fill="#c0392b">F</text>
+
+  <!-- offset d -->
+  <line x1="862" y1="238" x2="862" y2="284" stroke="#2c3e50" stroke-width="1.5" marker-start="url(#arrDim)" marker-end="url(#arrDim)"/>
+  <text x="872" y="266" font-size="15" font-weight="bold" fill="#2c3e50">d</text>
+  <text x="872" y="283" font-size="12" fill="#5d6d7e">(축 오프셋 ≤ 0.15 m)</text>
+
+  <!-- yaw moment tendency -->
+  <path d="M 688 246 A 46 46 0 0 1 688 334" fill="none" stroke="#e67e22" stroke-width="3" stroke-dasharray="6,5" marker-end="url(#arrMom)"/>
+  <text x="700" y="296" font-size="14.5" font-weight="bold" fill="#e67e22">F·d</text>
+  <text x="700" y="313" font-size="12.5" fill="#e67e22">요 모멘트</text>
+
+  <!-- notes -->
+  <rect x="60" y="480" width="820" height="102" rx="10" fill="#f8f9f9" stroke="#d5dbdb"/>
+  <text x="80" y="508" font-size="14.5" fill="#2c3e50">① 저울은 반드시 <tspan font-weight="bold">링 뒤 단일 라인</tspan>에 — 두 레그 장력의 벡터 합 = F 를 읽는다 (레그 한쪽에 넣으면 그 레그 몫만 읽음).</text>
+  <text x="80" y="536" font-size="14.5" fill="#2c3e50">② 모멘트 F·d 는 <tspan font-weight="bold">레그 장력 차이</tspan>(A &gt; B)가 흡수 → 로봇이 돌지 않으면서도 저울 값은 오염되지 않음.</text>
+  <text x="80" y="564" font-size="14.5" fill="#2c3e50">③ 성립 조건: <tspan font-weight="bold">d &lt; w/2</tspan> (두 레그 모두 팽팽 — 늘어지면 간격 w 를 넓힐 것) · 라인–추력축 정렬 ±10° 이내 (cos 오차 &lt; 2%).</text>
+</svg>
