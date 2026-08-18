@@ -321,3 +321,19 @@ E1 프로토콜 5시드, objective 평균:
 
 E4(a)의 유효 축은 **preview 하나**이고, 이는 부모 논문 Fig.8(문맥 제거 시 저하)과
 상동. 나머지 두 축의 "무차별"도 그대로 보고 (안전장치 비용 없음 주장 가능).
+
+## 9.3 C-9 병합 회귀 게이트 — 통과 (2026-08-18, feature/diff-wmpc-advanced)
+
+sim-to-real 병합(`04a7e4f`)으로 러너의 제어 틱이 인라인 ssm+preview에서 공유 코어
+`WallScanControlLoop`로 바뀜 (+ frozen_ref는 러너측 `_FrozenRefCtl` 래퍼로 재이식).
+diffwmpc_domain_adaptations §4 C-9가 요구한 양방향 재현 (`c9_regress` 조건, 기록
+덮어쓰기 금지 원칙으로 별도 exp 디렉토리):
+
+| 게이트 | 기록치 | 재실행 | Δ |
+|---|--:|--:|--:|
+| ssi × measured_aruco_sfix s4 (sim-to-real측) | 96.72 | 96.722 | +0.002% |
+| diff × nominal(GT) s0 (우리측) | 13.327 | 13.327 | +0.001% |
+
+**판정: 병합은 diff에 대해 동작 보존.** C-6(preview 공급 규약)도 이 diff 셀 재현으로
+함께 확인됨 — `WallScanControlLoop`가 공급하는 preview 하에서 기록치가 재현되므로
+하드웨어 참조 생성기와의 규약 일치가 실측됨. 다음: C-2 (diff × EKF vis7 게이트).

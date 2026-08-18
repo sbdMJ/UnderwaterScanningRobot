@@ -1,0 +1,35 @@
+# C-9 merge-regression gate (docs/research/diffwmpc_domain_adaptations.md §4):
+# after merging sim-to-real's run_mpc_cell -> WallScanControlLoop refactor, reproduce
+# BOTH sides' recorded cells bidirectionally. Own exp dir — never overwrite records.
+#   gate 1 (sim-to-real side): ssi  x measured_aruco_sfix s4 -> 96.72 recorded
+#   gate 2 (diff side):        diff x nominal(GT)        s0 -> 13.33 recorded
+# Run:
+#   run_experiment.py ssi  --cond measured_aruco_sfix --seed 4 --config .../c9_regress.yaml
+#   run_experiment.py diff --cond nominal             --seed 0 --config .../c9_regress.yaml
+exp: c9_regress
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  nominal: {}                       # diff gate: GT state, e1 twin
+  measured_aruco_sfix:              # ssi gate: EKF state, e5_ekf twin
+    state: ekf
+    sensors: hw2026bag_aruco
+    ukfm_theta: true
+
+methods:
+  diff:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+  ssi:
+    tam: fixed
+    params_json: experimental_results/tuning/bo_nmpc/best_params.json
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 4]   # gate cells are selected per-run via --cond/--seed
