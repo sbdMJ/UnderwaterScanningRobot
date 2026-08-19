@@ -318,8 +318,10 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
 기대 로그: `building acados solver ...` (**rate 모델 첫 기동은 nx 변경으로 C 코드
 재생성 — 수 분 소요가 정상**; 5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후
 재시작) → `wallscan controller up ...`
-→ **WARN 3개 필수 확인**: `ACTUATOR-RATE model: force slew ...` (없으면 plant
-JSON이 구버전 — rsync 확인) + `DEPTH-ONLY mode: zeroed werr ...` (없으면
+→ **WARN 4개 필수 확인**: `ACTUATOR-RATE model: force slew ...` (없으면 plant
+JSON이 구버전 — rsync 확인) + `LATENCY PREDICTOR: rolling state forward 0.40 s ...`
+(없으면 plant JSON 구버전 — 없이는 ~0.4 s 왕복 지연이 16 cm/4.2 s 캡 스윙
+리밋사이클을 만든다, bag 23_03 실측) + `DEPTH-ONLY mode: zeroed werr ...` (없으면
 depth_only 누락 — 2026-08-18에 두 번 누락, 바닥 고착·리밋사이클 재발) +
 `DEPTH-HOLD mode: phase machine bypassed, z_ref -> ...`
 → `/wallscan/u`·current_cmd 50 Hz.
@@ -338,7 +340,10 @@ enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
   이 경우 hold_z 누락 오진 금지, 진단은 phase 고정 여부로 구분 (누락이면 위상
   순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복). ACTUATOR-RATE 모델 + rate 전용
   가중치가 이 원인의 수정 — 그 구성에서 u[4] 포화 왕복이 다시 보이면 params_json
-  누락(기본 z=40이 vz 지연과 공진)부터 의심.
+  누락(기본 z=40이 vz 지연과 공진)부터 의심하고, params_json도 정상인데 **~4 s
+  주기 캡-투-캡 왕복**이면 원인 ⑨ = LATENCY PREDICTOR 미적용 (bag 23_03: 왕복
+  지연 ~0.4 s가 모든 가중치 세트를 리밋사이클로 몰았다 — WARN 4개 중
+  `LATENCY PREDICTOR` 확인).
 - **u[4]/u[5]가 캡(−0.61 = −2.25/3.68)에 한 방향으로 고정된 채 z 접근이 멈추면
   즉시 OFF** — 도달 불가능한 z_ref다 (22_36 실측: 바닥 아래 목표를 향해 15 s간
   캡 추력으로 바닥 고착). rate 모델의 정상 정착은 u[4]가 캡 아래에서 완만히

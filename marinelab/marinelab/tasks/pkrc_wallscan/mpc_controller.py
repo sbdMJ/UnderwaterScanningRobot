@@ -67,6 +67,20 @@ reproducibility (their plant JSONs carry no ``force_rate_limit``). The friction 
 (zero thrust below ~0.7 A) is compensated affinely by the thrust mapper and its residual
 (min realizable force 0.37 N) is accepted as the +-2-3 cm depth-ripple floor.
 
+## Command-latency predictor (``PlantParams.command_latency_s``)
+
+The deployed chain also carries ~0.4 s of round-trip DEAD TIME (solve overrun, mapper +
+teleop hops, CAN, T200 spin-up) that no slew model captures. Field-identified from bag
+2026-08-19 23:03:29: with the rate model AND the retuned weights live, the depth loop
+still swung cap-to-cap at 4.2 s / 16 cm p-p, and the matched replay
+(``isaaclab/logs/_probe_field_2303.py``) reproduces that signature exactly when 0.4 s of
+input delay is injected — and collapses to ~1 cm when the measured state is rolled
+forward through the in-flight command history before each solve. ``command_latency_s``
+enables exactly that predictor inside :meth:`WallScanMPC.solve` (one RK4 tick of the 13-D
+dynamics per in-flight command; history reset on ``init_state_traj``). Over-prediction is
+benign (predicting 0.4 s against a zero-delay plant costs ~0.5 cm), so the shipped hw
+JSON carries the full 0.4 s estimate.
+
 ## Sensitivity validity
 
 ``eval_solution_sensitivity`` is only meaningful while the solution is interior. Measured on
@@ -134,6 +148,14 @@ class PlantParams:
     # session's realizable force k*(amps_limit - I0) when thrusters are operationally
     # clamped (e.g. the depth-hold scenario's horizontal pairs at the deadzone).
     thrust_limits: tuple[float, ...] | None = None
+    # Round-trip command latency of the deployed chain (s): solve overrun + mapper/teleop
+    # hops + CAN + T200 spin-up. When > 0, WallScanMPC rolls the measured state forward
+    # through the in-flight command history before each solve (Smith-predictor style).
+    # Field-identified 2026-08-19 (bag 23_03_29 + _probe_field_2303.py): ~0.4 s of
+    # unmodeled dead time turned even the well-damped depth-hold weights into a
+    # 16 cm / 4.2 s cap-to-cap limit cycle; the predictor collapses it to ~1 cm and is
+    # robust to +-0.2 s misestimates (over-prediction with ZERO actual delay is benign).
+    command_latency_s: float = 0.0
 
     def to_json(self, path: str) -> None:
         """Dump for the hardware side: the Jetson has no env to call :func:`from_env` on,
@@ -529,6 +551,26 @@ class WallScanMPC:
             np.asarray(prm.thrust_limits, float).reshape(self.nu)
         self._tick_dt = float(cfg.step_dt)
         self._f_act = np.zeros(self.nu)
+        # Command-latency predictor (PlantParams.command_latency_s): one RK4 tick of the
+        # 13-D dynamics, applied over the in-flight command history before each solve.
+        self._pred_n = int(round(max(0.0, float(prm.command_latency_s)) / self._tick_dt))
+        self._pred_fn = None
+        self._u_hist: list[np.ndarray] = []
+        if self._pred_n > 0:
+            x_sym = ca.SX.sym("x", NX)
+            f_sym = ca.SX.sym("f", self.nu)
+            B_arr = np.asarray(prm.allocation_matrix, dtype=float)
+            h = self._tick_dt / 2
+            xn = x_sym
+            for _ in range(2):
+                k1 = _continuous_dynamics(xn, f_sym, prm, B_arr, ca.DM.zeros(ND))
+                k2 = _continuous_dynamics(xn + 0.5 * h * k1, f_sym, prm, B_arr, ca.DM.zeros(ND))
+                k3 = _continuous_dynamics(xn + 0.5 * h * k2, f_sym, prm, B_arr, ca.DM.zeros(ND))
+                k4 = _continuous_dynamics(xn + h * k3, f_sym, prm, B_arr, ca.DM.zeros(ND))
+                xn = xn + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+                xn = ca.vertcat(xn[0:3], _quat_normalize(xn[3:7]), xn[7:13])
+            self._pred_fn = ca.Function("latency_pred", [x_sym, f_sym], [xn])
+            self._u_hist = [np.zeros(self.nu) for _ in range(self._pred_n)]
         self.nominal = AcadosOcpSolver(nom_ocp, json_file=os.path.join(root, f"nominal{model_suffix}.json"),
                                        build=build, generate=generate, verbose=verbose)
         self.sens = None
@@ -571,6 +613,13 @@ class WallScanMPC:
     def solve(self, x0, P: np.ndarray, weights, *, want_sensitivity: bool = True,
               init_state_traj: bool = False) -> dict:
         x0 = np.asarray(x0, float).reshape(-1)
+        if self._pred_fn is not None:
+            if init_state_traj:  # fresh enable: nothing is in flight (mapper held zeros)
+                self._u_hist = [np.zeros(self.nu) for _ in range(self._pred_n)]
+            x13 = x0[:NX]
+            for f_in_flight in self._u_hist:  # oldest first
+                x13 = np.asarray(self._pred_fn(x13, f_in_flight)).reshape(NX)
+            x0 = np.concatenate([x13, x0[NX:]])
         if self.rate_mode:
             if init_state_traj:
                 self.reset_actuator()
@@ -613,6 +662,9 @@ class WallScanMPC:
             self._f_act = advance_actuator(self._f_act, rate0, self._rate_lim,
                                            self._f_lim, self._tick_dt)
             u0 = self._f_act.copy()
+        if self._pred_fn is not None:  # the command just issued is now in flight
+            self._u_hist.append(np.asarray(u0, float).copy())
+            self._u_hist.pop(0)
         out = {
             "u0": u0,
             "u0_cmd": np.clip(u0 / self.prm.max_thrust, -1.0, 1.0),

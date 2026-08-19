@@ -129,6 +129,10 @@ class WallScanControllerNode(Node):
         # marker-less depth-hold scenario: "[0.0,0.0,0.0,0.0,2.25,2.25]".
         p("force_rate_limit", [0.0] * 6)
         p("thrust_limits", [0.0] * 6)
+        # Round-trip dead-time predictor (mpc_controller docstring). -1 = keep the plant
+        # JSON's value (hw2026 ships 0.4 s, identified from bag 2026-08-19 23_03_29);
+        # 0 disables. Over-prediction is benign — do not zero this to "simplify" a trial.
+        p("command_latency_s", -1.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         plant_json = str(g("plant_json"))
@@ -143,11 +147,17 @@ class WallScanControllerNode(Node):
         tl = [float(v) for v in g("thrust_limits")]
         if any(v > 0.0 for v in tl):
             plant.thrust_limits = tuple(tl)
+        if float(g("command_latency_s")) >= 0.0:
+            plant.command_latency_s = float(g("command_latency_s"))
         if plant.force_rate_limit is not None:
             self.get_logger().warning(
                 f"ACTUATOR-RATE model: force slew {[round(v, 1) for v in plant.force_rate_limit]} N/s, "
                 f"|F| limits {[round(v, 2) for v in (plant.thrust_limits or (plant.max_thrust,) * 6)]} N "
                 "— nx 13+6, first start regenerates the acados C code")
+        if plant.command_latency_s > 0.0:
+            self.get_logger().warning(
+                f"LATENCY PREDICTOR: rolling state forward {plant.command_latency_s:.2f} s "
+                "through the in-flight commands before each solve (bag 23_03_29 fix)")
 
         scan_cfg = ScanCfg(
             z_top=float(g("z_top")), z_bottom=float(g("z_bottom")),

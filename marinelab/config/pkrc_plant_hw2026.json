@@ -99,5 +99,6 @@
   16.83,
   16.83
  ],
- "thrust_limits": null
+ "thrust_limits": null,
+ "command_latency_s": 0.4
 }
