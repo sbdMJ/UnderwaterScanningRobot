@@ -328,6 +328,11 @@ obs 31 → action 6, 48 steps/env, adaptive LR (desired_kl 0.01), γ=0.995.
   a free knob; if you change it, append the evidence rather than deleting the history.
 - Diagnose with instrumentation (`Scan/*` telemetry, deterministic-policy trajectory dumps),
   not blind knob turning.
+- **`run_experiment.py` multi-cell in one process is broken at HEAD** (2026-08-19): the
+  second `build_env` dies with `A prim already exists: /World/envs/env_0/Tank`, any method
+  (repro: `isaaclab/logs/probe_teardown.yaml`). Campaign SOP has always been one
+  invocation per cell (`--cond`/`--seed`) × ≤4 parallel containers. Also `isaaclab.sh -p`
+  can return exit 0 on a Python traceback — judge success by metrics file counts only.
 - `train_and_push.sh` (train → commit checkpoint → push) has paths hardcoded to
   `/root/home/rl_ws/...`, which is **not** this host's container layout
   (`/workspace/UnderwaterScanningRobot`). Fix the paths before using it here.

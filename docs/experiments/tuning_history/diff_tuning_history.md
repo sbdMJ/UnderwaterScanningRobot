@@ -337,3 +337,44 @@ diffwmpc_domain_adaptations §4 C-9가 요구한 양방향 재현 (`c9_regress` 
 **판정: 병합은 diff에 대해 동작 보존.** C-6(preview 공급 규약)도 이 diff 셀 재현으로
 함께 확인됨 — `WallScanControlLoop`가 공급하는 preview 하에서 기록치가 재현되므로
 하드웨어 참조 생성기와의 규약 일치가 실측됨. 다음: C-2 (diff × EKF vis7 게이트).
+
+## 9.4 C-2 게이트 통과: diff × EKF vis7 + 실측 저권한 플랜트 (2026-08-19)
+
+C-9 통과로 블로커가 풀린 두 실행 (advanced_experiments_todo §C·백로그). 기존
+nominal/ssi 기록은 그대로 두고 각 config에 diff method만 추가 — 새 metrics 파일만
+생성 (`e5_ekf_precheck.yaml`, `e5_hwdrag.yaml`).
+
+**C-2 — diff zero-shot(V8a) × measured_aruco_sfix_vis7, 5시드** (objective ↓,
+괄호는 E1 GT 쌍둥이 대비 지각-스택 비용):
+
+| method | mean | median | GT쌍둥이 mean | 지각 비용 |
+|---|--:|--:|--:|--:|
+| nominal | 1,020.2 | 520.3 | 968.7 | +5.3% |
+| ssi | 785.7 | 237.5 | 696.9 | +12.7% |
+| diff | **776.0** | **208.8** | 681.4 | **+13.9%** |
+
+**판정: C-2 통과.** 가중치 정책 입력이 추정 상태로 오염돼도 diff의 열화는 ssi와
+같은 크기의 공통모드(+14% vs +13%)이고, 순위(diff ≈ ssi > nominal)와 무충돌이
+유지된다. diff 특이 상호작용 없음 → **E5 go 라인업에 diff 편입**, EKF-조건
+fine-tune은 불필요 (concern C-2 해소).
+
+**diff × e5_hwdrag hwdrag_trim** (실측 항력·3.68 N·-1 N 트림, E5 Table 4 sim측
+근거의 diff 공백 보충):
+
+| method | mean | median | 비고 |
+|---|--:|--:|:--|
+| nominal | 7,594.8 | 6,611.9 | |
+| ssi | 12,523.5 | 5,618.6 | s2 폭주 40,955 (온라인 학습 불안정, §9.2 계열) |
+| diff | **7,164.8** | 6,161.0 | s2 12,106 — 폭주 없음 |
+
+median은 ssi > diff > nominal, mean은 diff 최선 (ssi가 어려운 시드 s2에서 8×
+폭주하는 동안 diff는 nominal과 같은 완만한 열화). 부모 논문 MOBO-WMPC 판정
+패턴(nominal에 안 지고 · 붕괴 없이 · 적응 방법에 median만 근소 열세) 그대로.
+
+**운영 발견 (이 세션 ~40분 비용)**: ① 한 프로세스 다중-셀 실행(config의
+seeds/conds를 한 invocation으로)은 현 HEAD에서 두 번째 `build_env`가
+`A prim already exists: /World/envs/env_0/Tank`로 죽는다 — method 무관(재현 프로브
+`isaaclab/logs/probe_teardown.yaml`, nominal s0→s1에서 재현), 병합 회귀 아님(기존
+캠페인 로그 확인 결과 8/15 e5_hwdrag 40셀 전부 셀당 프로세스 × 4 병렬이 SOP였음).
+② `isaaclab.sh -p`는 파이썬이 트레이스백으로 죽어도 exit 0을 반환할 수 있다 —
+성공 판정은 반드시 metrics 파일 수로 (stdout·exit code 둘 다 신뢰 불가).
