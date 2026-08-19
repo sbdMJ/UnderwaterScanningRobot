@@ -34,10 +34,38 @@ dumped by ``isaaclab/logs/_probe_plant.py``:
 3. **Gravity is explicit.** PhysX applies weight to the real robot (``disable_gravity=False``)
    while ``HydrodynamicsModel`` contributes buoyancy only, so the model must carry both.
 
-Not modelled: the first-order thruster lag (``tau_up = 0.1 s``, ``tau_down = 0.05 s``). The
-commanded force is assumed to be applied instantly. That is a deliberate first-iteration
-choice — it costs some overshoot at reference reversals, and the fix (augmenting the state
-with the thruster state, nx 13 -> 19) is a known follow-up if the baseline shows it.
+## Actuator model (optional, nx 13 -> 13 + nu)
+
+``PlantParams.force_rate_limit = None`` (default) keeps the original instant-force model:
+the OCP input is per-thruster force and the commanded force is assumed applied instantly.
+That was a deliberate first-iteration choice, flagged here as "a known follow-up if the
+baseline shows it" — and the 2026-08-18 depth-hold campaign showed it (bag 04_15_35,
+``hw_bag_depthhold_0415_20260818.py``): the deployed chain slew-limits the VESC current
+(teleop ramp, 17-30 A/s measured), so a full command reversal takes ~0.3 s that the model
+did not know about. werr z=40 then acts as a relay against a lagged plant and the depth
+loop settles into a +-5 cm / ~3 s describing-function limit cycle with heave 81% saturated.
+
+Setting ``force_rate_limit`` (per-thruster N/s = ``newton_per_amp * teleop ramp``) switches
+the model to a rate-limited integrator — the same structure as the hardware:
+
+* state grows to ``[x13, F_act(nu)]``; thrust in the dynamics comes from the state ``F_act``,
+* the OCP input becomes the NORMALIZED force rate ``r`` in [-1, 1], ``F_act_dot = rate * r``
+  (so ``wu`` regularizes the rate — an u-rate cost for free; sim-tuned wu values do not
+  carry over),
+* ``|F_act|`` is box-constrained per thruster by ``thrust_limits`` (falls back to
+  ``max_thrust``) — set these to the session's realizable force ``k*(amps_limit - I0)`` and
+  the optimizer stops recruiting physically-neutered thrusters through attitude coupling,
+* :meth:`WallScanMPC.solve` keeps the applied-force state between ticks (integrating its
+  own plan at ``cfg.step_dt``; reset to zero on ``init_state_traj``) and returns the NEXT
+  tick's planned force as ``u0``/``u0_cmd``, so every downstream consumer (thrust mapper,
+  adapters, telemetry) still sees a force command. Publishing the one-tick-ahead force
+  means the teleop ramp can always realize it exactly (the plan never exceeds the ramp).
+
+The first-order sim lag (``tau_up = 0.1 s``) remains unmodelled — on the vehicle the teleop
+current ramp dominates it, and the sim experiments (E1-E4) keep the legacy model for
+reproducibility (their plant JSONs carry no ``force_rate_limit``). The friction deadzone
+(zero thrust below ~0.7 A) is compensated affinely by the thrust mapper and its residual
+(min realizable force 0.37 N) is accepted as the +-2-3 cm depth-ripple floor.
 
 ## Sensitivity validity
 
@@ -97,6 +125,15 @@ class PlantParams:
     # command never reaches).
     max_thrust: float = 40.0
     allocation_matrix: tuple[tuple[float, ...], ...] = field(default_factory=tuple)
+    # Per-thruster force slew limit (N/s) of the deployed actuator chain — on the vehicle
+    # this is newton_per_amp * the teleop current ramp (17-30 A/s measured 2026-08-18;
+    # use the conservative 17 so the plan is always realizable). None = legacy
+    # instant-force model (nx 13, input = force) — the sim experiments' setting.
+    force_rate_limit: tuple[float, ...] | None = None
+    # Per-thruster |force| bound (N). None = max_thrust on every thruster. Set to the
+    # session's realizable force k*(amps_limit - I0) when thrusters are operationally
+    # clamped (e.g. the depth-hold scenario's horizontal pairs at the deadzone).
+    thrust_limits: tuple[float, ...] | None = None
 
     def to_json(self, path: str) -> None:
         """Dump for the hardware side: the Jetson has no env to call :func:`from_env` on,
@@ -121,6 +158,10 @@ class PlantParams:
         raw["quadratic_damping"] = tuple(raw["quadratic_damping"])
         raw["center_of_buoyancy"] = tuple(raw["center_of_buoyancy"])
         raw["allocation_matrix"] = tuple(tuple(r) for r in raw["allocation_matrix"])
+        # Optional actuator-model fields (absent in pre-2026-08-19 exports -> legacy model).
+        for key in ("force_rate_limit", "thrust_limits"):
+            if raw.get(key) is not None:
+                raw[key] = tuple(raw[key])
         return cls(**raw)
 
     @classmethod
@@ -287,17 +328,33 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
     nu = int(B.shape[1])
     dt = cfg.dt_mpc
 
+    # Actuator model switch (module docstring): rate mode augments the state with the
+    # applied per-thruster force and turns the input into a normalized force rate.
+    rate = None if prm.force_rate_limit is None else \
+        np.asarray(prm.force_rate_limit, dtype=float).reshape(nu)
+    if rate is not None and np.any(rate <= 0.0):
+        raise ValueError(f"force_rate_limit must be positive; got {rate}")
+    f_lim = np.full(nu, prm.max_thrust) if prm.thrust_limits is None else \
+        np.asarray(prm.thrust_limits, dtype=float).reshape(nu)
+    nx = NX + (nu if rate is not None else 0)
+
     ocp = AcadosOcp()
     model = AcadosModel()
     model.name = model_name
-    x = ca.SX.sym("x", NX)
+    x = ca.SX.sym("x", nx)
     u = ca.SX.sym("u", nu)
     p = ca.SX.sym("p", NP_REF + ND)
     model.p = p
     d_world = p[NP_REF:NP_REF + ND]
 
-    def f(xx, uu):
-        return _continuous_dynamics(xx, uu, prm, B, d_world)
+    if rate is not None:
+        def f(xx, uu):
+            # thrust comes from the force STATE; the input uu is the normalized rate.
+            x13_dot = _continuous_dynamics(xx[0:NX], xx[NX:], prm, B, d_world)
+            return ca.vertcat(x13_dot, ca.DM(rate) * uu)
+    else:
+        def f(xx, uu):
+            return _continuous_dynamics(xx, uu, prm, B, d_world)
 
     # Sub-stepped RK4. The yaw axis is stiff for a 0.05 s stage: Izz = 0.393 kg*m^2 against
     # 24 N*m of Mz authority is 61 rad/s^2, so one RK4 step per stage lands its four
@@ -312,11 +369,11 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
         k3 = f(x_next + 0.5 * h * k2, u)
         k4 = f(x_next + h * k3, u)
         x_next = x_next + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-        x_next = ca.vertcat(x_next[0:3], _quat_normalize(x_next[3:7]), x_next[7:13])
+        x_next = ca.vertcat(x_next[0:3], _quat_normalize(x_next[3:7]), x_next[7:])
     model.disc_dyn_expr = x_next
     model.x, model.u = x, u
 
-    y_err = _error_expr(x, p, cfg)
+    y_err = _error_expr(x[0:NX], p, cfg)
 
     if sensitivity:
         p_glob = ca.SX.sym("p_global", NE + nu)
@@ -330,10 +387,21 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
         model.cost_y_expr = ca.vertcat(y_err, u)
         model.cost_y_expr_e = y_err
 
-    ocp.constraints.lbu = np.full(nu, -prm.max_thrust)
-    ocp.constraints.ubu = np.full(nu, prm.max_thrust)
+    if rate is not None:
+        # input = normalized force rate; the force itself is a box-constrained state.
+        ocp.constraints.lbu = np.full(nu, -1.0)
+        ocp.constraints.ubu = np.full(nu, 1.0)
+        ocp.constraints.idxbx = NX + np.arange(nu)
+        ocp.constraints.lbx = -f_lim
+        ocp.constraints.ubx = f_lim
+        ocp.constraints.idxbx_e = NX + np.arange(nu)
+        ocp.constraints.lbx_e = -f_lim
+        ocp.constraints.ubx_e = f_lim
+    else:
+        ocp.constraints.lbu = -f_lim
+        ocp.constraints.ubu = f_lim
     ocp.constraints.idxbu = np.arange(nu)
-    ocp.constraints.x0 = np.zeros(NX)
+    ocp.constraints.x0 = np.zeros(nx)
     ocp.constraints.x0[3] = 1.0  # unit quaternion, or the first solve starts from a singular R
 
     ocp.model = model
@@ -393,6 +461,20 @@ DEFAULT_WERR = (
 DEFAULT_WU = 0.01
 
 
+def advance_actuator(f_act, rate_cmd, rate_limit, f_lim, dt) -> np.ndarray:
+    """One control tick of the applied-force bookkeeping (pure, natively tested).
+
+    ``f_act`` (N) integrates the solver's normalized rate command at the modelled slew
+    limit over the CONTROL tick (``cfg.step_dt``, not ``dt_mpc`` — the loop re-solves
+    every tick), clipped to the per-thruster force bounds. Because the modelled slew is
+    the conservative end of the measured teleop ramp, the published one-tick-ahead force
+    is always realizable and this open-loop integration stays honest.
+    """
+    f = np.asarray(f_act, dtype=float) + \
+        np.asarray(rate_limit, dtype=float) * np.clip(np.asarray(rate_cmd, dtype=float), -1.0, 1.0) * float(dt)
+    return np.clip(f, -np.asarray(f_lim, dtype=float), np.asarray(f_lim, dtype=float))
+
+
 class WallScanMPC:
     """Nominal + sensitivity acados solver pair for the wallscan task, single initial state."""
 
@@ -437,6 +519,16 @@ class WallScanMPC:
                                      solver_opts=solver_opts, rk4_substeps=rk4_substeps)
         wu = np.asarray(wu_init if wu_init is not None else np.full(self.nu, DEFAULT_WU), float)
         self.n_pglobal = NE + self.nu
+        # Actuator-rate mode bookkeeping (module docstring): the applied-force state lives
+        # HERE so every caller (adapters, ROS node, sim runner) stays 13-D at the seam.
+        self.rate_mode = prm.force_rate_limit is not None
+        self.nx = NX + (self.nu if self.rate_mode else 0)
+        self._rate_lim = None if not self.rate_mode else \
+            np.asarray(prm.force_rate_limit, float).reshape(self.nu)
+        self._f_lim = np.full(self.nu, prm.max_thrust) if prm.thrust_limits is None else \
+            np.asarray(prm.thrust_limits, float).reshape(self.nu)
+        self._tick_dt = float(cfg.step_dt)
+        self._f_act = np.zeros(self.nu)
         self.nominal = AcadosOcpSolver(nom_ocp, json_file=os.path.join(root, f"nominal{model_suffix}.json"),
                                        build=build, generate=generate, verbose=verbose)
         self.sens = None
@@ -470,9 +562,20 @@ class WallScanMPC:
             P[k, 7:] = d
         return P
 
+    def reset_actuator(self, f_act=None) -> None:
+        """Re-anchor the applied-force state (rate mode) — zero matches a fresh enable,
+        where the mapper watchdog has ramped the real currents down while disabled."""
+        self._f_act = np.zeros(self.nu) if f_act is None else \
+            np.asarray(f_act, float).reshape(self.nu).copy()
+
     def solve(self, x0, P: np.ndarray, weights, *, want_sensitivity: bool = True,
               init_state_traj: bool = False) -> dict:
         x0 = np.asarray(x0, float).reshape(-1)
+        if self.rate_mode:
+            if init_state_traj:
+                self.reset_actuator()
+            if x0.size == NX:  # callers stay 13-D; the force state is ours to append
+                x0 = np.concatenate([x0, self._f_act])
         w = np.asarray(weights, float).reshape(-1)
         if w.size != self.n_pglobal:
             raise ValueError(f"weights must have length {self.n_pglobal}; got {w.size}")
@@ -502,9 +605,19 @@ class WallScanMPC:
 
         u0 = np.asarray(self.nominal.get(0, "u"), float)
         x_traj = np.stack([np.asarray(self.nominal.get(k, "x"), float) for k in range(self.N + 1)])
+        rate0 = None
+        if self.rate_mode:
+            # ``u0`` keeps FORCE semantics for every consumer: publish the one-tick-ahead
+            # planned force and advance the internal applied-force state to match.
+            rate0 = u0
+            self._f_act = advance_actuator(self._f_act, rate0, self._rate_lim,
+                                           self._f_lim, self._tick_dt)
+            u0 = self._f_act.copy()
         out = {
             "u0": u0,
             "u0_cmd": np.clip(u0 / self.prm.max_thrust, -1.0, 1.0),
+            "rate0": rate0,
+            "f_act": self._f_act.copy() if self.rate_mode else None,
             "x_node": x_traj[self.sens_node],
             "x_nodes": {k: x_traj[k] for k in self.sens_nodes},
             "x_traj": x_traj,

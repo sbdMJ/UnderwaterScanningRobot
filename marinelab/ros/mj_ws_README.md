@@ -292,18 +292,28 @@ ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HO
 ```bash
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
-  -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
+  -p params_json:=$MARINELAB_ROOT/config/depthhold_rate_weights.json \
+  -p thrust_limits:="[0.0,0.0,0.0,0.0,2.25,2.25]" \
   -p hold_z:=Z_HOLD -p depth_only:=true \
   -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
 # hold_z: 상태머신 우회(고정 z_ref) — 2026-08-18 bag 03_41에서 위상 순환이
 # z_ref를 0.13↔0.17로 튕겨 15 cm 리밋사이클을 만든 것의 근본 수정.
+# 2026-08-19 (bag 04_15 → 근본원인 ⑧ 수정): plant JSON이 ACTUATOR-RATE 모델을
+# 켠다 (force_rate_limit = teleop 램프 17 A/s × k; MPC가 전류 램프를 예측에 반영
+# → 뱅뱅 relay 제거). params_json은 rate 모델 전용 depth-hold 가중치
+# (z=8, v_z=15, wu=0.1 — 기본 z=40/wu=0.01은 vz LPF 0.5 s 지연과 공진해 7 cm
+# 리밋사이클, _probe_rate_mpc.py 실측; BO best_params는 rate 모델에 이월 불가).
+# thrust_limits = 이 세션의 실현 가능 힘 k(amps_limit−I₀): 수평 데드존 클램프 = 0,
+# heave 3 A = 2.25 N — 모델이 없는 힘을 계획하거나 수평을 동원하는 것을 차단.
 # depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
 # 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
 ```
 
-기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시
-`rm -rf ~/.cache/wallscan_acados` 후 재시작) → `wallscan controller up ...`
-→ **WARN 2개 필수 확인**: `DEPTH-ONLY mode: zeroed werr ...` (없으면
+기대 로그: `building acados solver ...` (**rate 모델 첫 기동은 nx 변경으로 C 코드
+재생성 — 수 분 소요가 정상**; 5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후
+재시작) → `wallscan controller up ...`
+→ **WARN 3개 필수 확인**: `ACTUATOR-RATE model: force slew ...` (없으면 plant
+JSON이 구버전 — rsync 확인) + `DEPTH-ONLY mode: zeroed werr ...` (없으면
 depth_only 누락 — 2026-08-18에 두 번 누락, 바닥 고착·리밋사이클 재발) +
 `DEPTH-HOLD mode: phase machine bypassed, z_ref -> ...`
 → `/wallscan/u`·current_cmd 50 Hz.
@@ -320,7 +330,9 @@ enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
   ※ 04_15 실측: hold_z·depth_only 둘 다 정상이어도 **relay 리밋사이클**(근본원인
   ⑧, werr z=40 near-relay + teleop 램프 지연)로 81% 포화·±5 cm 진동이 남는다 —
   이 경우 hold_z 누락 오진 금지, 진단은 phase 고정 여부로 구분 (누락이면 위상
-  순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복).
+  순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복). ACTUATOR-RATE 모델 + rate 전용
+  가중치가 이 원인의 수정 — 그 구성에서 u[4] 포화 왕복이 다시 보이면 params_json
+  누락(기본 z=40이 vz 지연과 공진)부터 의심.
 - controller_debug의 phase(2번째 값)가 **0에 고정** (위상 순환 = hold_z 누락)
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:

@@ -117,6 +117,14 @@ class WallScanControllerNode(Node):
         # +-7.5 cm. For any pure depth-hold trial set hold_z (and depth_only when
         # marker-less); leave at -1 for real scanning.
         p("hold_z", -1.0)
+        # Actuator-rate model overrides (mpc_controller module docstring). All-zero =
+        # keep the plant JSON's values (pkrc_plant_hw2026.json ships force_rate_limit =
+        # newton_per_amp * 17 A/s, the conservative end of the measured teleop ramp).
+        # thrust_limits: per-thruster |F| cap in N — set to the session's realizable
+        # force k*(amps_limit - I0) when thrusters are operationally clamped, e.g. the
+        # marker-less depth-hold scenario: "[0.0,0.0,0.0,0.0,2.25,2.25]".
+        p("force_rate_limit", [0.0] * 6)
+        p("thrust_limits", [0.0] * 6)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         plant_json = str(g("plant_json"))
@@ -125,6 +133,17 @@ class WallScanControllerNode(Node):
                 f"plant_json not found ({plant_json!r}): pass -p plant_json:=... or set "
                 "MARINELAB_ROOT so config/pkrc_plant_fixed_tam.json resolves")
         plant = PlantParams.from_json(plant_json)
+        frl = [float(v) for v in g("force_rate_limit")]
+        if any(v > 0.0 for v in frl):
+            plant.force_rate_limit = tuple(frl)
+        tl = [float(v) for v in g("thrust_limits")]
+        if any(v > 0.0 for v in tl):
+            plant.thrust_limits = tuple(tl)
+        if plant.force_rate_limit is not None:
+            self.get_logger().warning(
+                f"ACTUATOR-RATE model: force slew {[round(v, 1) for v in plant.force_rate_limit]} N/s, "
+                f"|F| limits {[round(v, 2) for v in (plant.thrust_limits or (plant.max_thrust,) * 6)]} N "
+                "— nx 13+6, first start regenerates the acados C code")
 
         scan_cfg = ScanCfg(
             z_top=float(g("z_top")), z_bottom=float(g("z_bottom")),
