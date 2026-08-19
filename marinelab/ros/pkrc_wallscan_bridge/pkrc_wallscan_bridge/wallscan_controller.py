@@ -73,7 +73,8 @@ def _build_controller(node: Node, method: str, plant: PlantParams, mpc_cfg: Wall
         ctl = SSIMPCController(
             step_dt=float(g("step_dt")), ssi_lr=float(g("ssi_lr")),
             ssi_kernel_std=float(g("ssi_kernel_std")), ssi_n_rf=int(g("ssi_n_rf")),
-            ssi_seed=int(g("ssi_seed")), **kwargs)
+            ssi_seed=int(g("ssi_seed")), ssi_d_max=float(g("ssi_d_max")),
+            ssi_d_tau=float(g("ssi_d_tau")), **kwargs)
         ctl.name = "ssi"
         return ctl
     raise SystemExit(f"unknown method {method!r} (nominal|bo|ssi)")
@@ -89,6 +90,17 @@ class WallScanControllerNode(Node):
         p("ssi_lr", 0.14733286466312384)          # adopted ssi attempt-2 trial 87
         p("ssi_kernel_std", 0.18398034704266503)
         p("ssi_n_rf", 100), p("ssi_seed", 0)
+        # |d_world| clamp (N/axis): the true residual is O(0.5 N) — anything near the
+        # thrust authority is a learning artifact (bag 00_33: 10-12 N ghost) and must
+        # not reach the OCP. The learner also pairs its regression with the command
+        # from command_latency_s ago (same dead time the x0 predictor compensates).
+        p("ssi_d_max", 5.0)
+        # Injection low-pass tau (s) — the stability half of the bag-00_33 fix: the
+        # learner is a parallel feedback path, and under the 0.4 s dead time its
+        # tick-rate injection is unstable EVEN with aligned pairs (matched replay:
+        # 20 cm limit cycle); filtering d_world well below 1/dead-time restores a
+        # 1.3 cm hold while the quasi-DC residual still converges. 0 disables (sim).
+        p("ssi_d_tau", 3.0)
         # horizon 20 / RTI 4 = the validated DEPLOY setting (E4c 2026-08-16): on the
         # Jetson the sim default h30/rti8 takes 37-38 ms vs the 20 ms tick — h20/rti4
         # runs 15.6-16.2 ms (p99 20.7, <=4.4% soft overruns) and is performance-lossless

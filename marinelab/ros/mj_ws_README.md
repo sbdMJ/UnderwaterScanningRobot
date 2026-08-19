@@ -331,6 +331,11 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
 - method:=ssi 외 전부 nominal 시나리오-③과 동일 (SSI는 FixedWeightNMPC를 상속 —
   rate 모델·LATENCY PREDICTOR·가중치·캡이 그대로 탑재된다). SSI 하이퍼파라미터
   (`ssi_lr` 등)는 tuning attempt-2 trial 87 채택값이 노드 기본값.
+- **원인 ⑩ 가드 (2026-08-20 bag 00_33)**: 1차 ssi 시도는 학습기의 회귀 쌍이
+  0.4 s 데드타임에 오염돼 10–12 N 유령 외란을 주입, 13–15 cm 리밋사이클로 실패.
+  수정 3종이 노드 기본값으로 탑재됨 — 지연 정렬 회귀 쌍(command_latency_s 사용),
+  주입 저역통과 `ssi_d_tau`=3 s(안정성의 핵심), 클램프 `ssi_d_max`=5 N.
+  이 값들을 끄지 말 것 (0으로 끄면 00_33 재현).
 - 기동 확인: WARN 4개 동일 + `wallscan controller up: method='ssi'`.
 - **enable 후 손 대지 말 것** (push 시험은 nominal bag에서만): 학습기는 모든
   미모델 힘을 잔차로 배우므로, 손/테더 개입은 오염이다.
