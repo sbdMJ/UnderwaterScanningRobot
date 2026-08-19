@@ -117,6 +117,10 @@ class WallScanControllerNode(Node):
         # +-7.5 cm. For any pure depth-hold trial set hold_z (and depth_only when
         # marker-less); leave at -1 for real scanning.
         p("hold_z", -1.0)
+        # Refuse enable when |current z - hold_z| exceeds this (m); 0 disables. See the
+        # HOLD-Z SANITY comment at the enable edge (field 2026-08-19: stale Z_HOLD from a
+        # previous session sat below the tank floor -> cap thrust into the floor).
+        p("hold_z_sanity_m", 0.3)
         # Actuator-rate model overrides (mpc_controller module docstring). All-zero =
         # keep the plant JSON's values (pkrc_plant_hw2026.json ships force_rate_limit =
         # newton_per_amp * 17 A/s, the conservative end of the measured teleop ramp).
@@ -178,6 +182,7 @@ class WallScanControllerNode(Node):
                 "z + attitude only; horizontal commands are cost-free noise (keep the "
                 "horizontal amps_limit at the deadzone!)")
         hold_z = float(g("hold_z"))
+        self.hold_z_sanity = float(g("hold_z_sanity_m"))
         if hold_z >= 0.0:
             self.get_logger().warning(
                 f"DEPTH-HOLD mode: phase machine bypassed, z_ref -> {hold_z:.3f} m "
@@ -243,6 +248,23 @@ class WallScanControllerNode(Node):
             self._debug(-1.0, 0.0)
             return
         if not self.was_enabled:  # rising edge: re-anchor the scan at the current depth
+            # HOLD-Z SANITY (field 2026-08-19, bag 22_36_50): the estimator's z frame is
+            # re-anchored per session (bar10xt offset drifts), so a Z_HOLD reused from a
+            # previous session can sit BELOW THE TANK FLOOR — the target was 0.85 m off,
+            # unreachable, and the controller held cap thrust into the floor. Refuse to
+            # enable when the hold target is implausibly far from the CURRENT depth;
+            # hold_z_sanity_m:=0 disables the guard (big-tank long descents).
+            if (self.loop.hold_z is not None and self.hold_z_sanity > 0.0
+                    and abs(float(p.z) - self.loop.hold_z) > self.hold_z_sanity):
+                self.enabled = False
+                self._zero()
+                self.get_logger().error(
+                    f"HOLD-Z SANITY: refusing enable — hold_z {self.loop.hold_z:.3f} is "
+                    f"{abs(float(p.z) - self.loop.hold_z):.2f} m from current z {p.z:.3f} "
+                    f"(> {self.hold_z_sanity:.2f}). Re-read Z_HOLD from /wallscan/state "
+                    "THIS session (the z frame moves with the bar10xt offset), or raise "
+                    "hold_z_sanity_m if the jump is intentional.")
+                return
             self.loop.reset(veh)
             self.was_enabled = True
             self.get_logger().info(f"scan enabled: anchored at z={p.z:.2f}")

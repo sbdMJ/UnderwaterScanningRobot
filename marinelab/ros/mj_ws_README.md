@@ -278,9 +278,15 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
 기본값으로 구움) — `[UNCALIBRATED]`가 뜨면 뭔가 잘못된 것.
 
 **T2 (controller)** — 먼저 로봇을 **가용 컬럼의 중간쯤**에 손으로 잡고 T5에서
-Z_HOLD를 읽는다 (⚠ bar10xt에 ~+0.5 m 오프셋이 있어 이 수조의 state z는
-바닥 ~0.02, 수면 부유 ~0.25 — Z_HOLD는 **0.10–0.15 근방**이 정상이다.
-바닥·수면과 각각 ≥8 cm 여유 확인):
+Z_HOLD를 읽는다. ⚠ **Z_HOLD는 매 세션 새로 읽는다 — 절대 지난 세션 값 재사용
+금지.** state z 프레임은 estimator가 세션마다 재앵커하고 bar10xt 오프셋도
+표류한다: 08-18 세션은 부유 0.25/바닥 0.016이었지만 08-19 세션은 부유
+0.98/바닥 0.73이었고, 재사용한 0.13이 **바닥보다 0.6 m 아래**가 되어 캡 추력으로
+바닥 고착 (bag 22_36_50, `hw_bag_depthhold_2236_20260819.py`). 절대값이 아니라
+**방금 읽은 z에서 컬럼 중간으로 10 cm 안쪽**을 고른다 (바닥·수면 각각 ≥8 cm 여유).
+이제 컨트롤러가 enable 시 |z−hold_z| > 0.3 m이면 `HOLD-Z SANITY` ERROR와 함께
+enable을 거부한다 — 이 에러가 보이면 낡은 값을 쓴 것이니 다시 읽어라
+(의도적 원거리 목표는 `-p hold_z_sanity_m:=`으로 완화, 0 = 비활성):
 
 ```bash
 ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HOLD
@@ -333,7 +339,15 @@ enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
   순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복). ACTUATOR-RATE 모델 + rate 전용
   가중치가 이 원인의 수정 — 그 구성에서 u[4] 포화 왕복이 다시 보이면 params_json
   누락(기본 z=40이 vz 지연과 공진)부터 의심.
+- **u[4]/u[5]가 캡(−0.61 = −2.25/3.68)에 한 방향으로 고정된 채 z 접근이 멈추면
+  즉시 OFF** — 도달 불가능한 z_ref다 (22_36 실측: 바닥 아래 목표를 향해 15 s간
+  캡 추력으로 바닥 고착). rate 모델의 정상 정착은 u[4]가 캡 아래에서 완만히
+  움직이는 모습이다 (틱당 변화 ≤ 0.09).
 - controller_debug의 phase(2번째 값)가 **0에 고정** (위상 순환 = hold_z 누락)
+- controller_debug의 solve_ms: nx 19로 **Jetson h20/rti4가 ~26 ms** (bag 22_36
+  실측; 이전 15.6–16.2). 20 ms 틱을 넘는 soft overrun — teleop stale 문턱(0.5 s)
+  대비 무해하고 f_act 부기는 보수 방향이지만, 더 커지면 `-p rti_iters:=3` 또는
+  `-p horizon:=15`를 E4(c) 프로토콜로 벤치 후 적용.
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
 
