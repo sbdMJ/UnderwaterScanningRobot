@@ -309,10 +309,18 @@ depth_only 누락 — 2026-08-18에 두 번 누락, 바닥 고착·리밋사이�
 → `/wallscan/u`·current_cmd 50 Hz.
 
 enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
-- **u[0..3] ≈ 0** — 0이 아니면 depth_only가 안 들어간 것 (03_41 bag에서
-  |u0| 평균 0.52로 검출; 수평 데드존 클램프 덕에 위험하진 않지만 무효 시험)
+- **u[0..3] ≈ 0** — 단, 이 규칙은 **heave가 비포화일 때만** 유효 (04_15 bag 실측:
+  depth_only가 켜져 있어도 heave 포화 중엔 옵티마이저가 pitch 트림을 통해 수평
+  스러스터를 cost-free로 동원해 u[0..3]가 u[4]와 동기 부호반전, |평균| 0.1–0.3).
+  진짜 누락 시그니처는 03_41처럼 **준-DC 클램프 고착**(|u0| 평균 ≥0.5, 부호 고정)
+  — 허구 벽 오차가 상수라서 흔들리지 않는다. 헷갈리면 T2의
+  `DEPTH-ONLY mode:` WARN 로그가 정본.
 - **u[4], u[5]가 ±1 포화 왕복이 아님** — 포화 왕복(03_41: 틱의 78%)이면
-  z_ref가 튀고 있는 것 (hold_z 누락) → 즉시 OFF
+  z_ref가 튀고 있는 것 (hold_z 누락) → 즉시 OFF.
+  ※ 04_15 실측: hold_z·depth_only 둘 다 정상이어도 **relay 리밋사이클**(근본원인
+  ⑧, werr z=40 near-relay + teleop 램프 지연)로 81% 포화·±5 cm 진동이 남는다 —
+  이 경우 hold_z 누락 오진 금지, 진단은 phase 고정 여부로 구분 (누락이면 위상
+  순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복).
 - controller_debug의 phase(2번째 값)가 **0에 고정** (위상 순환 = hold_z 누락)
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
