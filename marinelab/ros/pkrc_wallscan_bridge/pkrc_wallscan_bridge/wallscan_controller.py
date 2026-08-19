@@ -288,13 +288,21 @@ class WallScanControllerNode(Node):
         msg = Float64MultiArray()
         msg.data = [float(v) for v in np.clip(out.u_cmd, -1.0, 1.0)]
         self.pub_u.publish(msg)
-        self._debug(out.solve_ms, float(out.status))
+        self._debug(out.solve_ms, float(out.status), aux=out.aux)
 
-    def _debug(self, solve_ms: float, status: float) -> None:
+    def _debug(self, solve_ms: float, status: float, aux: dict | None = None) -> None:
         z_ref, s_ref = self.loop.refs
         dbg = Float64MultiArray()
         dbg.data = [float(self.enabled), float(self.loop.phase), float(self.loop.cycles),
                     z_ref, s_ref, solve_ms, status]
+        # SSI diagnostics, appended (existing indices unchanged): the bag must be able to
+        # judge the learner — d_world (N, world) the residual injects, and the one-step
+        # prediction error norm. Absent for nominal/bo (7-element message as before).
+        if aux and "ssi_residual_b" in aux:
+            d = getattr(self.loop.ctl, "_d_world", None)
+            dbg.data += ([float(v) for v in d] if d is not None else [0.0, 0.0, 0.0])
+            pe = aux.get("ssi_pred_err")
+            dbg.data.append(float(np.linalg.norm(pe)) if pe is not None else 0.0)
         self.pub_dbg.publish(dbg)
 
 

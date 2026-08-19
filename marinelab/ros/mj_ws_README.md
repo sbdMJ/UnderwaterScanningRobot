@@ -311,9 +311,38 @@ ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
 # 리밋사이클, _probe_rate_mpc.py 실측; BO best_params는 rate 모델에 이월 불가).
 # thrust_limits = 이 세션의 실현 가능 힘 k(amps_limit−I₀): 수평 데드존 클램프 = 0,
 # heave 3 A = 2.25 N — 모델이 없는 힘을 계획하거나 수평을 동원하는 것을 차단.
-# depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
-# 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
+# depth-hold가 서면 method:=ssi로 재시도 — 절차는 아래 "SSI 재시도" 블록
 ```
+
+**SSI 재시도 (nominal depth-hold 합격 후, 2026-08-19 bag 23_47 기준)** — 목표:
+nominal에 남는 **+3~6 cm 편측 오프셋**(평형력이 마찰 데드존 내부라 생기는 구조
+한계)을 SSI의 온라인 잔차 학습(d_world 주입)이 흡수하는지 확인. T2만 바꾼다
+(Ctrl-C 후 재기동; T1/T3는 그대로):
+
+```bash
+ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
+  -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
+  -p params_json:=$MARINELAB_ROOT/config/depthhold_rate_weights.json \
+  -p thrust_limits:="[0.0,0.0,0.0,0.0,2.25,2.25]" \
+  -p hold_z:=Z_HOLD -p depth_only:=true \
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
+```
+
+- method:=ssi 외 전부 nominal 시나리오-③과 동일 (SSI는 FixedWeightNMPC를 상속 —
+  rate 모델·LATENCY PREDICTOR·가중치·캡이 그대로 탑재된다). SSI 하이퍼파라미터
+  (`ssi_lr` 등)는 tuning attempt-2 trial 87 채택값이 노드 기본값.
+- 기동 확인: WARN 4개 동일 + `wallscan controller up: method='ssi'`.
+- **enable 후 손 대지 말 것** (push 시험은 nominal bag에서만): 학습기는 모든
+  미모델 힘을 잔차로 배우므로, 손/테더 개입은 오염이다.
+- **접촉이 생기면 disable로 끝나지 않는다**: 학습기 가중치(alpha)는 re-enable에도
+  유지되도록 설계돼 있다 (`reset_episode`는 alpha 보존). 바닥·수면·테더 접촉이
+  있었으면 **T2 노드를 재시작**하고 다시 enable.
+- 판정 (60–90 s bag): controller_debug가 ssi에서 4채널 연장된다 —
+  `[7:10]=d_world`(N, world), `[10]=1스텝 예측오차 노름`. 합격 신호는
+  ① d_world[2]가 수십 초 안에 준정상값으로 수렴 (기대: 실부력잔차 ~+0.2–0.5 N),
+  ② |z−z_ref| 평균이 nominal의 +4 cm에서 유의미하게 감소, ③ 리플은 nominal과
+  동급(±2–3 cm), heave 비포화 유지. 예측오차가 지속 증가하거나 d_world가 발산하면
+  즉시 OFF — 잔차 학습이 지연/접촉과 얽힌 것 (bag 가져와 분석).
 
 기대 로그: `building acados solver ...` (**rate 모델 첫 기동은 nx 변경으로 C 코드
 재생성 — 수 분 소요가 정상**; 5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후
