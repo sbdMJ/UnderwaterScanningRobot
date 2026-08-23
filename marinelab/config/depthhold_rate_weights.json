@@ -1,0 +1,5 @@
+{
+ "_comment": "Depth-hold weights for the ACTUATOR-RATE model (mpc_controller nx 13+6, pkrc_plant_hw2026.json force_rate_limit). NOT for the legacy instant-force model and NOT for full wallscan. Derived 2026-08-19 (isaaclab/logs/_probe_rate_mpc.py): under the field vertical sensing chain (5 Hz bar10xt + vz_from_depth LPF tau 0.5 s) the DEFAULT weights (z=40, wu=0.01) put the rate-mode crossover on the vz lag and limit-cycle at 7 cm p-p; z=8 / v_z=15 / wu=0.1 sits below the lag and holds 1.1 cm p-p, 0% heave saturation, 1.2 s recovery from a 10 cm push, robust to the teleop ramp range 17-30 A/s. In rate mode wu regularizes the NORMALIZED FORCE RATE, so sim-tuned wu values do not carry over. Horizontal werr entries are zeroed at runtime by depth_only anyway.",
+ "werr": [40.0, 8.0, 40.0, 10.0, 5.0, 15.0, 20.0, 20.0, 20.0, 20.0, 0.5, 0.5],
+ "wu": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+}

@@ -90,5 +90,15 @@
    0.0,
    0.0
   ]
- ]
+ ],
+ "force_rate_limit": [
+  27.098,
+  27.098,
+  29.818,
+  29.818,
+  16.83,
+  16.83
+ ],
+ "thrust_limits": null,
+ "command_latency_s": 0.4
 }

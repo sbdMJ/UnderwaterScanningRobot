@@ -42,7 +42,13 @@ class SSIMPCController(FixedWeightNMPC):
     def __init__(self, *, step_dt: float, ssi_lr: float = 0.1, ssi_kernel_std: float = 1.0,
                  ssi_n_rf: int = 100, ssi_seed: int = 0, ssi_kernel: str = "gaussian",
                  target_mask=None, input_mask=None, predict_fn=None,
-                 mass: float | None = None, max_thrust: float | None = None, **nmpc_kwargs):
+                 mass: float | None = None, max_thrust: float | None = None,
+                 latency_s: float | None = None, ssi_d_max: float = float("inf"),
+                 ssi_d_tau: float = 0.0, **nmpc_kwargs):
+        # NB: the class defaults keep the LEGACY sim behavior (no clamp, no injection
+        # low-pass, latency from the plant JSON = 0 in sim exports) — E1-E4 results and
+        # the ssi hyperparameter tuning predate these guards. The DEPLOYED defaults
+        # (clamp 5 N, tau 3 s) live in the wallscan_controller node parameters.
         plant = nmpc_kwargs.get("plant")
         super().__init__(**nmpc_kwargs)
         self.name = "ssi"
@@ -53,6 +59,29 @@ class SSIMPCController(FixedWeightNMPC):
         self._predict_fn = predict_fn  # (x13, u_norm, dt) -> x13; casadi-built lazily if None
         self._masks = (list(target_mask or TARGET_MASK_DEFAULT),
                        list(input_mask or INPUT_MASK_DEFAULT))
+        # Latency-aligned regression pairs (field 2026-08-20, bag 00_33_31): the measured
+        # transition x_k -> x_{k+1} is driven by the command issued command_latency_s AGO,
+        # not the one issued now. Pairing the learner with the current command feeds it
+        # phase-shifted residuals; on the vehicle it learned an OSCILLATING 10-12 N ghost
+        # disturbance (>2x the total heave authority) and drove the depth loop to a
+        # 13-15 cm limit cycle. The FIFO below delays the recorded control to match the
+        # dead time — the same latency the MPC's x0 predictor compensates.
+        lat = float(latency_s if latency_s is not None
+                    else getattr(plant, "command_latency_s", 0.0) or 0.0)
+        self._lat_ticks = max(0, int(round(lat / self._dt)))
+        self._u_fifo: list[np.ndarray] = [np.zeros(U_DIM) for _ in range(self._lat_ticks)]
+        # Physical sanity bound on the injected disturbance (N, per world axis): the true
+        # residual is O(0.5 N); anything approaching the total thrust authority is a
+        # learning artifact and must not reach the OCP.
+        self._d_max = float(ssi_d_max)
+        # Bandwidth separation (matched replay, _probe_field_2303.py): the learner is a
+        # parallel feedback path updating at tick rate; with the chain's 0.4 s dead time
+        # its gain*delay product is unstable even with aligned pairs (stable at 0.2 s,
+        # 20 cm limit cycle at 0.4 s). The residuals this axis exists for are quasi-DC
+        # (buoyancy/deadzone bias, slow currents), so the INJECTED d_world is low-passed
+        # to sit well below 1/dead-time; DC convergence is unaffected.
+        self._d_tau = float(ssi_d_tau)
+        self._d_filt = np.zeros(3)
         self._make_learner(lr=ssi_lr, kernel_std=ssi_kernel_std, n_rf=ssi_n_rf,
                            seed=ssi_seed, kernel=ssi_kernel)
 
@@ -75,6 +104,7 @@ class SSIMPCController(FixedWeightNMPC):
             cfg["seed"] = int(seed)
         self._make_learner(**cfg)
         self._d_world = None
+        self._d_filt = np.zeros(3)
 
     @property
     def learner(self) -> RFFOnlineLearner:
@@ -114,16 +144,40 @@ class SSIMPCController(FixedWeightNMPC):
         super().reset(state)
         self._learner.reset_episode()
         self._d_world = None
+        self._d_filt = np.zeros(3)
+        # fresh enable: nothing is in flight (the mapper watchdog held zeros)
+        self._u_fifo = [np.zeros(U_DIM) for _ in range(self._lat_ticks)]
 
     def step(self, state: VehicleState, ref: ScanReference,
              obs: np.ndarray | None = None) -> ControlOutput:
         x = state.to_x13()
         self._learner.update(x, self._dt, lambda xl, ul, dt: self._predict(xl, ul, dt))
-        r_b = self._learner.residual_now(x)  # (3,) residual accel, body frame
-        R = _quat_to_rot_np(x[3:7])
-        self._d_world = self._mass * (R @ r_b)
+        # Evaluate the residual at the same state the OCP will actually solve from: when
+        # the WallScanMPC latency predictor is active, that is the measurement rolled
+        # forward through the in-flight commands — injecting a residual evaluated at the
+        # 0.4 s-stale measurement feeds the dead time back in through the disturbance
+        # channel (phase-shifted d_world = the very oscillation driver again).
+        x_eval = x
+        mpc = self._mpc
+        if getattr(mpc, "_pred_fn", None) is not None and getattr(mpc, "_u_hist", None):
+            for f_in_flight in mpc._u_hist:
+                x_eval = np.asarray(mpc._pred_fn(x_eval, f_in_flight)).reshape(-1)
+        r_b = self._learner.residual_now(x_eval)  # (3,) residual accel, body frame
+        R = _quat_to_rot_np(x_eval[3:7])
+        d_raw = np.clip(self._mass * (R @ r_b), -self._d_max, self._d_max)
+        a_f = self._dt / (self._d_tau + self._dt) if self._d_tau > 0.0 else 1.0  # 1 = off
+        self._d_filt = self._d_filt + a_f * (d_raw - self._d_filt)
+        self._d_world = self._d_filt.copy()
         out = super().step(state, ref, obs)
-        self._learner.record_control(x, out.u_cmd)
+        # score the NEXT transition against the command that will actually be acting
+        # during it: the one published lat_ticks ago (see __init__ on the dead time).
+        if self._lat_ticks:
+            u_eff = self._u_fifo[0]
+            self._u_fifo.append(np.asarray(out.u_cmd, float).copy())
+            self._u_fifo.pop(0)
+        else:
+            u_eff = out.u_cmd
+        self._learner.record_control(x, u_eff)
         out.aux["ssi_residual_b"] = r_b
         out.aux["ssi_alpha_norm"] = float(np.linalg.norm(self._learner.alpha))
         out.aux["ssi_pred_err"] = self._learner.last_pred_err

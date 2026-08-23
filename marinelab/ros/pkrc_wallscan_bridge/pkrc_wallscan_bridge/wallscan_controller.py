@@ -73,7 +73,8 @@ def _build_controller(node: Node, method: str, plant: PlantParams, mpc_cfg: Wall
         ctl = SSIMPCController(
             step_dt=float(g("step_dt")), ssi_lr=float(g("ssi_lr")),
             ssi_kernel_std=float(g("ssi_kernel_std")), ssi_n_rf=int(g("ssi_n_rf")),
-            ssi_seed=int(g("ssi_seed")), **kwargs)
+            ssi_seed=int(g("ssi_seed")), ssi_d_max=float(g("ssi_d_max")),
+            ssi_d_tau=float(g("ssi_d_tau")), **kwargs)
         ctl.name = "ssi"
         return ctl
     raise SystemExit(f"unknown method {method!r} (nominal|bo|ssi)")
@@ -89,6 +90,17 @@ class WallScanControllerNode(Node):
         p("ssi_lr", 0.14733286466312384)          # adopted ssi attempt-2 trial 87
         p("ssi_kernel_std", 0.18398034704266503)
         p("ssi_n_rf", 100), p("ssi_seed", 0)
+        # |d_world| clamp (N/axis): the true residual is O(0.5 N) — anything near the
+        # thrust authority is a learning artifact (bag 00_33: 10-12 N ghost) and must
+        # not reach the OCP. The learner also pairs its regression with the command
+        # from command_latency_s ago (same dead time the x0 predictor compensates).
+        p("ssi_d_max", 5.0)
+        # Injection low-pass tau (s) — the stability half of the bag-00_33 fix: the
+        # learner is a parallel feedback path, and under the 0.4 s dead time its
+        # tick-rate injection is unstable EVEN with aligned pairs (matched replay:
+        # 20 cm limit cycle); filtering d_world well below 1/dead-time restores a
+        # 1.3 cm hold while the quasi-DC residual still converges. 0 disables (sim).
+        p("ssi_d_tau", 3.0)
         # horizon 20 / RTI 4 = the validated DEPLOY setting (E4c 2026-08-16): on the
         # Jetson the sim default h30/rti8 takes 37-38 ms vs the 20 ms tick — h20/rti4
         # runs 15.6-16.2 ms (p99 20.7, <=4.4% soft overruns) and is performance-lossless
@@ -117,6 +129,22 @@ class WallScanControllerNode(Node):
         # +-7.5 cm. For any pure depth-hold trial set hold_z (and depth_only when
         # marker-less); leave at -1 for real scanning.
         p("hold_z", -1.0)
+        # Refuse enable when |current z - hold_z| exceeds this (m); 0 disables. See the
+        # HOLD-Z SANITY comment at the enable edge (field 2026-08-19: stale Z_HOLD from a
+        # previous session sat below the tank floor -> cap thrust into the floor).
+        p("hold_z_sanity_m", 0.3)
+        # Actuator-rate model overrides (mpc_controller module docstring). All-zero =
+        # keep the plant JSON's values (pkrc_plant_hw2026.json ships force_rate_limit =
+        # newton_per_amp * 17 A/s, the conservative end of the measured teleop ramp).
+        # thrust_limits: per-thruster |F| cap in N — set to the session's realizable
+        # force k*(amps_limit - I0) when thrusters are operationally clamped, e.g. the
+        # marker-less depth-hold scenario: "[0.0,0.0,0.0,0.0,2.25,2.25]".
+        p("force_rate_limit", [0.0] * 6)
+        p("thrust_limits", [0.0] * 6)
+        # Round-trip dead-time predictor (mpc_controller docstring). -1 = keep the plant
+        # JSON's value (hw2026 ships 0.4 s, identified from bag 2026-08-19 23_03_29);
+        # 0 disables. Over-prediction is benign — do not zero this to "simplify" a trial.
+        p("command_latency_s", -1.0)
         g = lambda n: self.get_parameter(n).value  # noqa: E731
 
         plant_json = str(g("plant_json"))
@@ -125,6 +153,23 @@ class WallScanControllerNode(Node):
                 f"plant_json not found ({plant_json!r}): pass -p plant_json:=... or set "
                 "MARINELAB_ROOT so config/pkrc_plant_fixed_tam.json resolves")
         plant = PlantParams.from_json(plant_json)
+        frl = [float(v) for v in g("force_rate_limit")]
+        if any(v > 0.0 for v in frl):
+            plant.force_rate_limit = tuple(frl)
+        tl = [float(v) for v in g("thrust_limits")]
+        if any(v > 0.0 for v in tl):
+            plant.thrust_limits = tuple(tl)
+        if float(g("command_latency_s")) >= 0.0:
+            plant.command_latency_s = float(g("command_latency_s"))
+        if plant.force_rate_limit is not None:
+            self.get_logger().warning(
+                f"ACTUATOR-RATE model: force slew {[round(v, 1) for v in plant.force_rate_limit]} N/s, "
+                f"|F| limits {[round(v, 2) for v in (plant.thrust_limits or (plant.max_thrust,) * 6)]} N "
+                "— nx 13+6, first start regenerates the acados C code")
+        if plant.command_latency_s > 0.0:
+            self.get_logger().warning(
+                f"LATENCY PREDICTOR: rolling state forward {plant.command_latency_s:.2f} s "
+                "through the in-flight commands before each solve (bag 23_03_29 fix)")
 
         scan_cfg = ScanCfg(
             z_top=float(g("z_top")), z_bottom=float(g("z_bottom")),
@@ -159,6 +204,7 @@ class WallScanControllerNode(Node):
                 "z + attitude only; horizontal commands are cost-free noise (keep the "
                 "horizontal amps_limit at the deadzone!)")
         hold_z = float(g("hold_z"))
+        self.hold_z_sanity = float(g("hold_z_sanity_m"))
         if hold_z >= 0.0:
             self.get_logger().warning(
                 f"DEPTH-HOLD mode: phase machine bypassed, z_ref -> {hold_z:.3f} m "
@@ -224,6 +270,23 @@ class WallScanControllerNode(Node):
             self._debug(-1.0, 0.0)
             return
         if not self.was_enabled:  # rising edge: re-anchor the scan at the current depth
+            # HOLD-Z SANITY (field 2026-08-19, bag 22_36_50): the estimator's z frame is
+            # re-anchored per session (bar10xt offset drifts), so a Z_HOLD reused from a
+            # previous session can sit BELOW THE TANK FLOOR — the target was 0.85 m off,
+            # unreachable, and the controller held cap thrust into the floor. Refuse to
+            # enable when the hold target is implausibly far from the CURRENT depth;
+            # hold_z_sanity_m:=0 disables the guard (big-tank long descents).
+            if (self.loop.hold_z is not None and self.hold_z_sanity > 0.0
+                    and abs(float(p.z) - self.loop.hold_z) > self.hold_z_sanity):
+                self.enabled = False
+                self._zero()
+                self.get_logger().error(
+                    f"HOLD-Z SANITY: refusing enable — hold_z {self.loop.hold_z:.3f} is "
+                    f"{abs(float(p.z) - self.loop.hold_z):.2f} m from current z {p.z:.3f} "
+                    f"(> {self.hold_z_sanity:.2f}). Re-read Z_HOLD from /wallscan/state "
+                    "THIS session (the z frame moves with the bar10xt offset), or raise "
+                    "hold_z_sanity_m if the jump is intentional.")
+                return
             self.loop.reset(veh)
             self.was_enabled = True
             self.get_logger().info(f"scan enabled: anchored at z={p.z:.2f}")
@@ -237,13 +300,28 @@ class WallScanControllerNode(Node):
         msg = Float64MultiArray()
         msg.data = [float(v) for v in np.clip(out.u_cmd, -1.0, 1.0)]
         self.pub_u.publish(msg)
-        self._debug(out.solve_ms, float(out.status))
+        try:
+            self._debug(out.solve_ms, float(out.status), aux=out.aux)
+        except Exception as exc:  # diagnostics must never take the control loop down
+            self.get_logger().error(f"debug publish failed: {exc!r}",
+                                    throttle_duration_sec=5.0)
 
-    def _debug(self, solve_ms: float, status: float) -> None:
+    def _debug(self, solve_ms: float, status: float, aux: dict | None = None) -> None:
         z_ref, s_ref = self.loop.refs
+        data = [float(self.enabled), float(self.loop.phase), float(self.loop.cycles),
+                float(z_ref), float(s_ref), float(solve_ms), float(status)]
+        # SSI diagnostics, appended (existing indices unchanged): the bag must be able to
+        # judge the learner — d_world (N, world) the residual injects, and the one-step
+        # prediction error norm. Absent for nominal/bo (7-element message as before).
+        # NB: build the plain list FIRST — Float64MultiArray.data is an array.array and
+        # rejects `+= list` (field-crashed 2026-08-19 23:59, first ssi enable tick).
+        if aux and "ssi_residual_b" in aux:
+            d = getattr(self.loop.ctl, "_d_world", None)
+            data += [float(v) for v in d] if d is not None else [0.0, 0.0, 0.0]
+            pe = aux.get("ssi_pred_err")
+            data.append(float(pe) if pe is not None and np.isfinite(pe) else 0.0)
         dbg = Float64MultiArray()
-        dbg.data = [float(self.enabled), float(self.loop.phase), float(self.loop.cycles),
-                    z_ref, s_ref, solve_ms, status]
+        dbg.data = data
         self.pub_dbg.publish(dbg)
 
 

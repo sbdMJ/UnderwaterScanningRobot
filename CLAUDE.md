@@ -2,16 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## ⚠ sim-to-real 작업 시작 전 필수 (one-shot 지침)
-
-**이 세션에서 sim-to-real / E5 / 수조·현장 실험 / Jetson / mj_ws 관련 작업을
-처음 시작한다면, 코드·문서를 만지기 전에
-`docs/experiments/sim-to-real/NEXT_SESSION.md`를 반드시 먼저 읽어라.**
-전체 여정, 완료(DONE) 표기, 미완성 상태의 정확한 스냅샷과 다음 할 일이 거기 있다.
-읽고 후속 작업에 착수한 직후에는 그 문서 안의 자기-삭제 규약에 따라 **그 파일과
-이 절을 함께 삭제·커밋**할 것 (불필요한 반복 열람 방지). 파일이 이미 없다면 이
-절도 낡은 것이니 같이 지워라.
-
 ## What this repo is
 
 RL for a PKRC UUV (22.8 kg, 6× T200) that scans the wall of a cylindrical water tank

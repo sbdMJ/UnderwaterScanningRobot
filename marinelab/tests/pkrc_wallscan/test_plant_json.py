@@ -63,6 +63,31 @@ def test_hw2026_export_carries_the_measured_field_values():
     assert hw.allocation_matrix == sim.allocation_matrix, "TAM is the bench-verified one"
 
 
+def test_hw2026_carries_the_actuator_rate_model():
+    """2026-08-19 (bag 04_15_35 postmortem): the deployed chain slew-limits the VESC
+    current at 17-30 A/s (teleop ramp); the OCP models the conservative 17 A/s so its
+    plan is always realizable. force_rate_limit = newton_per_amp * 17."""
+    hw = PlantParams.from_json(_JSON_HW)
+    k = (1.594, 1.594, 1.754, 1.754, 0.99, 0.99)  # thrust_mapper.py calibration defaults
+    assert hw.force_rate_limit is not None, "hw plant must enable the rate model"
+    for fr, ki in zip(hw.force_rate_limit, k):
+        assert abs(fr - ki * 17.0) < 1e-2
+    assert hw.thrust_limits is None, "session force caps are a node parameter, not plant truth"
+    # 2026-08-19 bag 23_03_29: ~0.4 s round-trip dead time (solve overrun + mapper/teleop
+    # hops + T200 spin-up) drove a 16 cm / 4.2 s cap-to-cap limit cycle even with the
+    # rate model + retuned weights; the in-flight-command predictor collapses it to ~1 cm.
+    assert hw.command_latency_s == 0.4
+
+
+def test_sim_export_keeps_the_legacy_instant_force_model():
+    """E1-E4 reproducibility: the sim plant JSON predates the actuator fields and must
+    keep loading as the instant-force model (nx 13)."""
+    sim = PlantParams.from_json(_JSON)
+    assert sim.force_rate_limit is None
+    assert sim.thrust_limits is None
+    assert sim.command_latency_s == 0.0
+
+
 def test_hw2026_round_trip_is_lossless(tmp_path):
     prm = PlantParams.from_json(_JSON_HW)
     out = tmp_path / "plant_hw.json"
