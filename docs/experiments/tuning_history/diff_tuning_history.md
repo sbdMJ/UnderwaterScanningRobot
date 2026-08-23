@@ -378,3 +378,23 @@ seeds/conds를 한 invocation으로)은 현 HEAD에서 두 번째 `build_env`가
 캠페인 로그 확인 결과 8/15 e5_hwdrag 40셀 전부 셀당 프로세스 × 4 병렬이 SOP였음).
 ② `isaaclab.sh -p`는 파이썬이 트레이스백으로 죽어도 exit 0을 반환할 수 있다 —
 성공 판정은 반드시 metrics 파일 수로 (stdout·exit code 둘 다 신뢰 불가).
+
+## 9.5 depthhold 머지 + C-9 게이트 재통과 (2026-08-24)
+
+`feature/sim-to-real-e5-depthhold`(실기체 depth-hold 캠페인 종결, 근본원인 8–10:
+actuator-rate 모델 nx 13+6 · 0.4 s 지연 예측기 · SSI learner 지연정렬/clamp/저역필터)를
+이 브랜치에 머지 (`3e8d613`). 사전 감사: 물리 충돌 0, 머지 트리 328 테스트 통과,
+세 확장 모두 opt-in (`force_rate_limit=None`/`command_latency_s=0`/clamp ∞/tau 0 =
+레거시 기본값, `from_env`는 새 필드 미설정, 실측 파라미터는 hw JSON 전용).
+
+바뀐 공유 코드 경로(ssi_controller·mpc_controller)에 대한 실측 닫음 — C-9 양방향
+게이트 재실행 (`c9b_regress`, 기록 덮어쓰기 금지로 별도 exp 디렉토리):
+
+| 게이트 | 기록치 (c9_regress) | 재실행 (c9b) | Δ |
+|---|--:|--:|--:|
+| ssi × measured_aruco_sfix s4 | 96.7219 | 96.7219 | -0.0001% |
+| diff × nominal(GT) s0 | 13.3271 | 13.3271 | +0.0007% |
+
+**판정: 머지는 sim 실험 경로에 대해 동작 보존.** E1–E5의 전 기록(diff §9.4 게이트
+포함)이 머지 후 HEAD에서 유효하다. 실기체 배포 스택과 diff 고도화 축이 이제 한
+브랜치에서 진행 가능 — 다음: C-1 (OCP 하드 벽 제약).
