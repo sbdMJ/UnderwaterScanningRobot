@@ -1,0 +1,33 @@
+# RC-WMPC evaluation cells (proposal 2026-08-24): the E1 nominal protocol with the two
+# RC variants. OWN results dir (e1_rc) so the frozen E1 table is never polluted; rows are
+# directly comparable to experimental_results/e1 because the protocol lines match e1_nominal.
+#
+#   rc       — full method: SSI injection + ctx-conditioned weight policy (ckpt has ctx_dim=5)
+#   rc_naive — ablation A1: SSI injection + the E1 diff checkpoint (ctx-less -> unconditioned)
+#
+# SSI half runs the sim-legacy guards (no clamp/LPF), matching the E1-E4 ssi cells.
+exp: e1_rc
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+
+conditions:
+  nominal: {}
+
+methods:
+  rc:
+    tam: fixed
+    ckpt: checkpoints/rc_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384          # ssi_mpc attempt-2 trial 87 (same as e1 ssi cell)
+    ssi_kernel_std: 0.18398034704266503
+  rc_naive:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc/policy_final.pt   # pre-RC ckpt => naive stacking by construction
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]

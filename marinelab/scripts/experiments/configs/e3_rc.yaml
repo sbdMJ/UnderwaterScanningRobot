@@ -1,0 +1,33 @@
+# RC-WMPC on the E3 current-disturbance protocol (proposal's decisive experiment).
+# Same conditions/seeds as e3_current.yaml so rows join the existing e3 table directly;
+# OWN results dir (e3_rc) so the frozen e3 artifacts are never touched.
+#
+#   rc       — full method (ctx-conditioned, joint-trained ckpt)
+#   rc_naive — ablation A1: SSI + the nominal-trained ctx-less diff ckpt (naive stacking)
+exp: e3_rc
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  tam: fixed
+
+conditions:
+  step:
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+  sine:
+    current: {type: sine, speed: 0.15, heading_deg: 0.0, period: 30.0}
+
+methods:
+  rc:
+    ckpt: checkpoints/rc_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384          # same learner hypers as the e3 ssi cells
+    ssi_kernel_std: 0.18398034704266503
+  rc_naive:
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2]
