@@ -1,0 +1,41 @@
+# RC-WMPC authority sweep (Phase B, 2026-08-24): the "gap vs authority margin" figure.
+# Same EKF protocol and current step as rc_authprobe's lowthrust_current; the swept knob
+# is the thrust cap. The 3.68 N point comes from rc_authprobe(_v1) (5 seeds); these
+# conditions add 8/16/40 N at 3 seeds. Methods: rc = V1 ckpt (conditioned), rc_naive =
+# naive stacking baseline. Expected shape per the flat-weight-landscape finding: the
+# conditioning gap (~-24 cm at 3.68 N) shrinks toward 0 as authority margin grows.
+exp: rc_authsweep
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  tam: fixed
+
+conditions:
+  auth8:
+    max_thrust: 8.0
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+  auth16:
+    max_thrust: 16.0
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+  auth40:
+    max_thrust: 40.0
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+
+methods:
+  rc:
+    ckpt: checkpoints/rc_wmpc_v1/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+  rc_naive:
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2]

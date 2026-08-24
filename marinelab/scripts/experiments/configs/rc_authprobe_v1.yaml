@@ -1,0 +1,32 @@
+# RC-WMPC V1 in-regime verdict (Phase A of the authority sweep, 2026-08-24).
+# V1 = V0 recipe + per-segment authority mix U(3,12) N + saturation_skip=degenerate
+# (checkpoints/rc_wmpc_v1). Protocol and condition IDENTICAL to rc_authprobe's
+# lowthrust_current, so the recorded rc(V0)/rc_naive/diff 5-seed rows there are the
+# paired controls. Own results dir; the method key stays "rc" (build_controller route),
+# V1-ness lives in the ckpt + this exp name.
+# Fairness caveat for the writeup: V1 trained 30k steps vs V0's 20k.
+exp: rc_authprobe_v1
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  max_thrust: 3.68
+  tam: fixed
+
+conditions:
+  lowthrust_current:
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+
+methods:
+  rc:
+    ckpt: checkpoints/rc_wmpc_v1/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4]
