@@ -1,0 +1,53 @@
+# RC-WMPC authority-limited probe (V0 verdict follow-up, 2026-08-24).
+# V0 landed on H3 in the E3 protocol: the soften->re-stiffen mechanism FIRES (radial -9.5%,
+# z -22.4% at the current step) but pays nothing, because at 40 N authority the weight
+# landscape is flat. This probe asks the pre-registered question: does the rc - rc_naive
+# gap open where authority is actually scarce?
+#
+# Protocol = e5_lowthrust verbatim (EKF state, hw2026bag_aruco sensors, measured 3.68 N
+# thrust cap), so the recorded nominal/ssi 5-seed rows there are the controls. Adds one
+# harsher condition: the E3 current step ON TOP of the thrust cap (at 3.68 N, 0.15 m/s
+# drag is ~11x larger relative to authority than in E3).
+#
+# Pre-registered gates (do not renegotiate after unblinding):
+#   validity: controller_cost.saturated_frac must be >> the E3 values (~1%) — else the
+#             probe never reached the intended regime and is VOID, not negative;
+#   verdict:  per-seed-paired rc - rc_naive must exceed seed noise in wall_dist_err_cm or
+#             tilt/termination outcomes; otherwise pivot the headline to the
+#             saturation-sensitivity axis (proposal's documented exit).
+exp: rc_authprobe
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  max_thrust: 3.68
+  tam: fixed
+
+conditions:
+  lowthrust: {}                       # shipped 4.9 N trim: 67% of heave-pair authority
+  lowthrust_trim:
+    residual_buoyancy_n: 0.9          # measured trim: the honest digital twin
+  lowthrust_current:
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+
+methods:
+  diff:
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+  rc_naive:
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+  rc:
+    ckpt: checkpoints/rc_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+# seeds 2-4 added 2026-08-24: the n=2 first pass left lowthrust_current suggestive but
+# unresolved (paired rc-rc_naive: -0.4 / -14.6 cm) — extended for the verdict.
+seeds: [0, 1, 2, 3, 4]
