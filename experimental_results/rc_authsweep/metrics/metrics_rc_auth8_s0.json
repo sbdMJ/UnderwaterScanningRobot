@@ -1,0 +1,89 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 2.004389524459839,
+  "tilt_sway_deg": 0.8487948775291443,
+  "tilt_deg": 1.9473676681518555,
+  "crab_deg": 11.733586311340332,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.1620935771139353,
+  "sway_speed_mps": 0.09921599702058335,
+  "heave_path_speed_mps": 0.1621450940828963,
+  "sway_path_speed_mps": 0.10871491416007685,
+  "heave_legs_scored": 1,
+  "sway_legs_scored": 2,
+  "wall_dist_err_cm": 36.089056730270386,
+  "cycles_mean": 1.0,
+  "cycles_per_env": [
+    1.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "rc_authsweep",
+  "method": "rc",
+  "cond": "auth8",
+  "seed": 0,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "ukfm_theta": true,
+    "ukfm_max_depth": 7.0,
+    "tam": "fixed",
+    "max_thrust": 8.0,
+    "current": {
+      "type": "step",
+      "speed": 0.15,
+      "heading_deg": 0.0,
+      "t_switch": 90.0,
+      "mode": "reverse"
+    },
+    "ckpt": "checkpoints/rc_wmpc_v1/policy_final.pt",
+    "ssi_lr": 0.14733286466312384,
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 12.618871318370415,
+    "solve_ms_p95": 18.91508726112077,
+    "solve_ms_max": 151.23167395358905,
+    "fail_frac": 0.0,
+    "saturated_frac": 1.0
+  },
+  "score": {
+    "objective": 57299.06574263357,
+    "collided": false,
+    "scored_losses": [
+      57299.06574263357
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.00970964634971147,
+    "phi_rmse_deg": 1.315955055230334,
+    "s_rmse_m": 0.029656093563915558
+  }
+}
