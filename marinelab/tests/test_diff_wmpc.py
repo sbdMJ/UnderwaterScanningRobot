@@ -301,6 +301,35 @@ def test_learn_step_skips_a_saturated_solve():
     assert lr.n_skipped_sat == 1 and lr.n_updates == 0
 
 
+def test_degenerate_mode_keeps_partially_saturated_steps():
+    """V1: a saturated |u0_cmd| with LIVE sensitivities is exact signal on the unsaturated
+    subspace and must be learned from, not skipped."""
+    lr = DiffWMPCLearner(_policy(), n_pglobal=NPG, batch_size=1, saturation_skip="degenerate")
+    w = lr.compute_weights(torch.zeros(FEAT))
+    out = _mpc_out(umax=0.999, seed=3)
+    # zero the rows of two "pinned" thrusters — the locally-true one-sided derivative
+    out["sens_u"][0:2, :] = 0.0
+    assert lr.learn_step(w, out, _error_fn, WallScanLossCfg()) is not None
+    assert lr.n_skipped_sat == 0 and lr.n_updates == 1
+
+
+def test_degenerate_mode_skips_fully_pinned_steps():
+    """All-zero sensitivities = the 'weights do not matter' lie; still skipped."""
+    lr = DiffWMPCLearner(_policy(), n_pglobal=NPG, batch_size=1, saturation_skip="degenerate")
+    w = lr.compute_weights(torch.zeros(FEAT))
+    out = _mpc_out(umax=1.0, seed=4)
+    out["sens_u"][:] = 0.0
+    for k in out["sens_x_nodes"]:
+        out["sens_x_nodes"][k][:] = 0.0
+    assert lr.learn_step(w, out, _error_fn, WallScanLossCfg()) is None
+    assert lr.n_skipped_sat == 1 and lr.n_updates == 0
+
+
+def test_unknown_saturation_skip_mode_rejected():
+    with pytest.raises(ValueError):
+        DiffWMPCLearner(_policy(), n_pglobal=NPG, saturation_skip="always")
+
+
 def test_learn_step_skips_missing_sensitivities():
     lr = DiffWMPCLearner(_policy(), n_pglobal=NPG, batch_size=1)
     out = _mpc_out()

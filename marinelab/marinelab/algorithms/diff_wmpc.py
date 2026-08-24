@@ -25,10 +25,13 @@ natively (feed it hand-made Jacobians) without a compiled solver.
 
 ## Two invariants the port must preserve
 
-1. **Skip steps where the solve failed or the control saturated.** Measured on this host
-   (``isaaclab/logs/_probe_acados.py``): ``eval_solution_sensitivity`` matches finite
+1. **Skip steps where the solve failed or the sensitivity is degenerate.** Measured on this
+   host (``isaaclab/logs/_probe_acados.py``): ``eval_solution_sensitivity`` matches finite
    differences to 6-7 digits at an interior optimum and is *identically zero* at a bound. A
-   saturated step therefore contributes a silently wrong (zero) gradient, not noise.
+   FULLY pinned step therefore contributes a silently wrong (zero) gradient, not noise.
+   Refined 2026-08-24 (``saturation_skip="degenerate"``): a PARTIALLY saturated step's
+   sensitivity is exact on the unsaturated subspace, so in authority-limited regimes the
+   legacy any-thruster skip discards mostly-correct signal — see the ctor comment.
 2. **The control term of the loss must use the NORMALIZED command** ``u/max_thrust``. The
    reference implementation flags the alternative as a "learn to do nothing" pathology: with
    forces in newtons the effort term dwarfs the tracking terms and the optimum is to stop
@@ -344,13 +347,26 @@ class DiffWMPCLearner:
     def __init__(self, policy: WeightPolicy, *, n_pglobal: int, lr: float = 5e-4,
                  betas: tuple[float, float] = (0.5, 0.99), grad_clip: float = 0.1,
                  batch_size: int = 10, saturation_thresh: float = 0.98,
-                 device: str = "cpu"):
+                 saturation_skip: str = "step", device: str = "cpu"):
+        # saturation_skip governs what to do when the solution touches the thrust bounds:
+        #   "step"       — legacy: drop the whole step once ANY |u0_cmd| > saturation_thresh.
+        #   "degenerate" — drop only when the sensitivities are ~0 EVERYWHERE (fully pinned
+        #     solution). A partially saturated step's sensitivity is exact on the
+        #     unsaturated subspace — the zero rows for pinned thrusters are the locally-true
+        #     one-sided derivative — so discarding it throws away correct signal. In the
+        #     authority-limited regime (rc_authprobe: 71-100% of steps "saturated" but
+        #     usually pinning 1-4 of 6 thrusters) this recovers most of the training signal
+        #     with no approximation. The smooth-surrogate alternative was tried and failed
+        #     validation (see mpc_controller's sens_relax docstring).
+        if saturation_skip not in ("step", "degenerate"):
+            raise ValueError(f"saturation_skip must be 'step' or 'degenerate', got {saturation_skip!r}")
         self.policy = policy.to(device)
         self.device = device
         self.n_pglobal = int(n_pglobal)
         self.grad_clip = float(grad_clip)
         self.batch_size = max(1, int(batch_size))
         self.saturation_thresh = float(saturation_thresh)
+        self.saturation_skip = str(saturation_skip)
         self.opt = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
         self._in_batch = 0
         self.last_loss = float("nan")
@@ -402,11 +418,17 @@ class DiffWMPCLearner:
         if mpc_out.get("status", 1) != 0 or not nodes or su is None:
             self.n_skipped_status += 1
             return None
-        if float(np.abs(mpc_out["u0_cmd"]).max()) > self.saturation_thresh:
-            # At a thrust bound the sensitivity is exactly zero, so this step would teach
-            # "these weights do not matter" -- a wrong lesson, not a noisy one.
-            self.n_skipped_sat += 1
-            return None
+        if self.saturation_skip == "step":
+            if float(np.abs(mpc_out["u0_cmd"]).max()) > self.saturation_thresh:
+                # At a thrust bound the sensitivity is exactly zero, so this step would
+                # teach "these weights do not matter" -- a wrong lesson, not a noisy one.
+                self.n_skipped_sat += 1
+                return None
+        else:  # "degenerate": keep partially saturated steps, drop fully pinned ones
+            mag = max([float(np.abs(su).max())] + [float(np.abs(S).max()) for S in nodes.values()])
+            if mag < 1e-9:
+                self.n_skipped_sat += 1
+                return None
 
         x_nodes = mpc_out.get("x_nodes") or {int(mpc_out.get("sens_node", 0)): mpc_out["x_node"]}
         u0 = torch.tensor(mpc_out["u0"], dtype=torch.float32, device=self.device,

@@ -123,6 +123,22 @@ parser.add_argument("--ssi_d_max", type=float, default=float("inf"),
 parser.add_argument("--ssi_d_tau", type=float, default=0.0,
                     help="Injection low-pass time constant [s]; 0 = off (sim legacy; the "
                          "vehicle uses 3.0 against its 0.4 s dead time).")
+parser.add_argument("--saturation_skip", choices=["step", "degenerate"], default="step",
+                    help="V1 (2026-08-24): 'degenerate' keeps partially saturated steps "
+                         "(their sensitivity is exact on the unsaturated subspace) and "
+                         "drops only fully pinned ones. Required to learn anything in "
+                         "authority-limited segments, where the legacy any-thruster skip "
+                         "discards 71-100%% of steps (rc_authprobe measurement).")
+parser.add_argument("--authority_mix", type=str, default="",
+                    help="V1: 'p,lo,hi' — per segment, with probability p the solver's "
+                         "per-thruster force bound is drawn U(lo, hi) N (runtime "
+                         "constraints_set; env untouched — the plan obeys the bound so the "
+                         "published command is realizable, same as the hardware teleop "
+                         "clamp). Remaining segments run the full plant authority. This is "
+                         "what puts the authority-scarce regime (where RC-WMPC measurably "
+                         "pays: rc_authprobe 5/5) inside the training distribution. "
+                         "Example: '0.5,3.0,12.0'. Empty = off. Pair with "
+                         "--saturation_skip degenerate.")
 parser.add_argument("--ckpt", type=str, default=None, help="Evaluate this checkpoint (learning off).")
 parser.add_argument("--resume_ckpt", type=str, default=None,
                     help="Load this checkpoint and CONTINUE learning (E2b online fine-tune: "
@@ -244,7 +260,17 @@ def main() -> None:
           f"radial/heading floor {args_cli.w_radial_floor}")
     learner = DiffWMPCLearner(policy, n_pglobal=mpc.n_pglobal, lr=args_cli.lr,
                               batch_size=args_cli.batch_size, grad_clip=args_cli.grad_clip,
-                              saturation_thresh=args_cli.saturation_thresh)
+                              saturation_thresh=args_cli.saturation_thresh,
+                              saturation_skip=args_cli.saturation_skip)
+    authority_mix = None
+    if args_cli.authority_mix:
+        p_lo_hi = [float(v) for v in args_cli.authority_mix.split(",")]
+        if len(p_lo_hi) != 3:
+            raise SystemExit("--authority_mix wants 'p,lo,hi'")
+        authority_mix = tuple(p_lo_hi)
+        print(f"[rc-wmpc] authority mix: P(limited)={authority_mix[0]} "
+              f"f_lim~U({authority_mix[1]}, {authority_mix[2]}) N  "
+              f"saturation_skip={args_cli.saturation_skip}")
     if args_cli.resume_ckpt is not None:
         state = torch.load(args_cli.resume_ckpt, map_location="cpu")
         if "opt" in state:  # continue the Adam state too (fine-tune, not re-init)
@@ -355,6 +381,12 @@ def main() -> None:
         state_m.s_ref[:] = cfg_env.scan.sway_step if phase in (1, 3) else 0.0
         theta_prev[:] = th
         policy.reset_history()
+        if authority_mix is not None:
+            p_lim, lo, hi = authority_mix
+            if rng.uniform() < p_lim:
+                mpc.set_input_bounds(float(rng.uniform(lo, hi)))
+            else:
+                mpc.set_input_bounds(None)
         if ssi is not None:
             # Fresh residual per segment: each segment redraws the plant (--dr_fluid) and
             # the current heading, so alpha carried across segments would describe the

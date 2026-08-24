@@ -88,6 +88,31 @@ this host (``isaaclab/logs/_probe_acados.py``): sensitivities match finite diffe
 6-7 digits at an interior optimum and are **identically zero** once the control saturates.
 Keep the weight bounds low enough to stay off the thrust limits and skip saturated steps —
 the learner does the latter.
+
+## Relaxed sensitivity (``sens_relax``, 2026-08-24) — EXPERIMENTAL, validation FAILED
+
+The skip strategy fails wholesale in authority-limited regimes: the rc_authprobe campaign
+measured 71-100% saturation at the vehicle's real 3.68 N thrust cap — i.e. the regime where
+weight adaptation demonstrably pays (rc beat naive stacking 5/5 seeds there) is exactly the
+regime the learner cannot learn in. ``sens_relax`` builds the SENSITIVITY solver against a
+relaxed OCP: input boxes widened by ``bound_factor`` and a smooth exponential barrier
+``kappa * sigma^2 * (exp((u-b)/sigma) + exp(-(u+b)/sigma))`` per thruster added to the
+EXTERNAL cost. The nominal solver is untouched.
+
+**Do not use for training.** Measured (``isaaclab/logs/_probe_relax_sens.py``, sweep over
+kappa/sigma): narrow barriers reproduce interior FD to 1e-7 but their saturated-point
+sensitivities fail the moderate-secant direction test (cos <= 0.05 vs the re-solved
+nominal); wide barriers corrupt the interior (relFD 0.65+). The root cause is structural,
+not a tuning miss: at a deeply saturated optimum the map w -> u0 is step-like (a 20% w_z
+change moved u0 by 113 N while the local derivative is ~0), and no pointwise smoothing can
+see a step located elsewhere. Kept for reference and future global-smoothing work.
+
+The DEPLOYED fix is on the learner side instead (``DiffWMPCLearner`` ``saturation_skip=
+"degenerate"``): a partially saturated step's sensitivity is EXACT on the unsaturated
+subspace (zero rows for pinned thrusters are the locally-true one-sided derivative), so
+only fully-degenerate steps (sensitivity ~ 0 everywhere) need skipping. In the
+authority-limited regime most "saturated" steps pin 1-4 of 6 thrusters, so this recovers
+most of the learning signal with no approximation at all.
 """
 from __future__ import annotations
 
@@ -340,7 +365,8 @@ def _error_expr(x, p, cfg: mref.WallScanMPCCfg):
 
 def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity: bool,
               model_name: str, code_export_dir: str, werr_init, wu_init,
-              solver_opts: dict | None = None, rk4_substeps: int = 1):
+              solver_opts: dict | None = None, rk4_substeps: int = 1,
+              relax: dict | None = None):
     if not _ACADOS_AVAILABLE:  # pragma: no cover
         raise ImportError("wallscan NMPC needs casadi + acados_template") from _ACADOS_IMPORT_ERROR
 
@@ -397,6 +423,9 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
 
     y_err = _error_expr(x[0:NX], p, cfg)
 
+    if relax is not None and (not sensitivity or rate is not None):
+        raise ValueError("relax= applies to the sensitivity OCP with the legacy "
+                         "force-input model only (rate mode saturates a state box)")
     if sensitivity:
         p_glob = ca.SX.sym("p_global", NE + nu)
         model.p_global = p_glob
@@ -404,6 +433,19 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
         ocp.cost.cost_type = ocp.cost.cost_type_e = "EXTERNAL"
         model.cost_expr_ext_cost = 0.5 * (ca.dot(w_err, y_err * y_err) + ca.dot(w_u, u * u))
         model.cost_expr_ext_cost_e = 0.5 * ca.dot(w_err, y_err * y_err)
+        if relax is not None:
+            # Smooth exponential barrier at the PHYSICAL bounds (module docstring): pushes
+            # the relaxed optimum just inside f_lim so the parametric sensitivity never
+            # degenerates to zero; exponentially negligible in the interior. sigma^2 scaling
+            # makes the gradient at the bound exactly kappa*sigma per side.
+            kappa = float(relax.get("kappa", 1.0))
+            sig = float(relax.get("sigma_frac", 0.05)) * f_lim
+            barrier = 0
+            for j in range(nu):
+                s_j, b_j = float(sig[j]), float(f_lim[j])
+                barrier = barrier + s_j * s_j * (ca.exp((u[j] - b_j) / s_j)
+                                                 + ca.exp(-(u[j] + b_j) / s_j))
+            model.cost_expr_ext_cost = model.cost_expr_ext_cost + kappa * barrier
     else:
         ocp.cost.cost_type = ocp.cost.cost_type_e = "NONLINEAR_LS"
         model.cost_y_expr = ca.vertcat(y_err, u)
@@ -420,8 +462,12 @@ def build_ocp(prm: PlantParams, cfg: mref.WallScanMPCCfg, *, N: int, sensitivity
         ocp.constraints.lbx_e = -f_lim
         ocp.constraints.ubx_e = f_lim
     else:
-        ocp.constraints.lbu = -f_lim
-        ocp.constraints.ubu = f_lim
+        # Relaxed sensitivity OCP: hard boxes widened so they are never active (the barrier
+        # holds the solution near +-f_lim); kept at the SAME dimensions so the nominal
+        # solver's flat iterate loads without reshaping.
+        bf = 1.0 if relax is None else float(relax.get("bound_factor", 3.0))
+        ocp.constraints.lbu = -f_lim * bf
+        ocp.constraints.ubu = f_lim * bf
     ocp.constraints.idxbu = np.arange(nu)
     ocp.constraints.x0 = np.zeros(nx)
     ocp.constraints.x0[3] = 1.0  # unit quaternion, or the first solve starts from a singular R
@@ -506,7 +552,7 @@ class WallScanMPC:
                  code_export_root: str | None = None, build: bool = True, generate: bool = True,
                  with_sensitivity: bool = True, verbose: bool = False,
                  solver_opts: dict | None = None, model_suffix: str = "",
-                 rk4_substeps: int = 5):
+                 rk4_substeps: int = 5, sens_relax: dict | None = None):
         self.prm, self.cfg, self.N = prm, cfg, int(N)
         self.rti_iters = max(1, int(rti_iters))
         # State sensitivity can be evaluated at ANY stage, and Diff-WMPC needs several.
@@ -574,12 +620,22 @@ class WallScanMPC:
         self.nominal = AcadosOcpSolver(nom_ocp, json_file=os.path.join(root, f"nominal{model_suffix}.json"),
                                        build=build, generate=generate, verbose=verbose)
         self.sens = None
+        self.sens_relax = dict(sens_relax) if sens_relax else None
         if with_sensitivity:
+            if self.sens_relax:
+                # A few SQP iterations settle the loaded nominal iterate onto the relaxed
+                # optimum (interior by construction) before factorization; 0 iterations
+                # would differentiate the relaxed OCP at a point that is not its optimum.
+                sens_opts = {"nlp_solver_max_iter": int(self.sens_relax.get("sqp_iters", 2))}
+                sens_name, sens_dir = "pkrc_wallscan_mpc_sensrelax", "sensitivity_relaxed"
+            else:
+                sens_opts, sens_name, sens_dir = None, "pkrc_wallscan_mpc_sens", "sensitivity"
             sens_ocp, _ = build_ocp(prm, cfg, N=self.N, sensitivity=True,
-                                    model_name="pkrc_wallscan_mpc_sens",
-                                    code_export_dir=os.path.join(root, "sensitivity"),
-                                    werr_init=werr, wu_init=wu, rk4_substeps=rk4_substeps)
-            self.sens = AcadosOcpSolver(sens_ocp, json_file=os.path.join(root, "sensitivity.json"),
+                                    model_name=sens_name,
+                                    code_export_dir=os.path.join(root, sens_dir),
+                                    werr_init=werr, wu_init=wu, rk4_substeps=rk4_substeps,
+                                    solver_opts=sens_opts, relax=self.sens_relax)
+            self.sens = AcadosOcpSolver(sens_ocp, json_file=os.path.join(root, f"{sens_dir}.json"),
                                         build=build, generate=generate, verbose=verbose)
         self._warned = 0
 
@@ -603,6 +659,32 @@ class WallScanMPC:
             P[k, 6] = s_anchor
             P[k, 7:] = d
         return P
+
+    def set_input_bounds(self, f_lim=None) -> None:
+        """Runtime per-thruster |force| bound (legacy force-input model only).
+
+        Bounds are build-time constants in acados but runtime-settable per stage; this is
+        what lets the RC-WMPC trainer draw a different thrust authority per segment (the
+        hardware analogue is the teleop current clamp) without rebuilding the solver pair.
+        The env is untouched: the solver's plan obeys the tighter bound, so the published
+        ``u0_cmd = u0 / max_thrust`` is realizable as-is. ``None`` restores the build-time
+        bounds. The sensitivity solver gets the same bounds so the loaded nominal iterate's
+        bound duals stay consistent.
+        """
+        if self.rate_mode:
+            raise ValueError("set_input_bounds applies to the legacy force-input model only")
+        if f_lim is None:
+            f = np.full(self.nu, self.prm.max_thrust) if self.prm.thrust_limits is None \
+                else np.asarray(self.prm.thrust_limits, float).reshape(self.nu)
+        else:
+            f = np.asarray(f_lim, float).reshape(-1)
+            f = np.full(self.nu, float(f[0])) if f.size == 1 else f.reshape(self.nu)
+        solvers = [self.nominal] + ([self.sens] if self.sens is not None and not self.sens_relax else [])
+        for s in solvers:
+            for k in range(self.N):
+                s.constraints_set(k, "lbu", -f)
+                s.constraints_set(k, "ubu", f)
+        self._f_lim = f.copy()
 
     def reset_actuator(self, f_act=None) -> None:
         """Re-anchor the applied-force state (rate mode) — zero matches a fresh enable,
@@ -686,6 +768,8 @@ class WallScanMPC:
                 self.sens.set(0, "lbx", x0)
                 self.sens.set(0, "ubx", x0)
                 self.sens.load_iterate_from_flat_obj(self.nominal.store_iterate_to_flat_obj())
+                if self.sens_relax:
+                    self.sens.solve()  # settle onto the relaxed (interior) optimum
                 # One factorization, then one cheap solve per requested node.
                 self.sens.setup_qp_matrices_and_factorize()
                 sens_x_nodes = {}
