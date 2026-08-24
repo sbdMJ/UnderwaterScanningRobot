@@ -51,7 +51,8 @@ import numpy as np
 import torch
 from torch import nn
 
-__all__ = ["WeightPolicy", "DiffWMPCLearner", "WallScanLossCfg", "wallscan_loss"]
+__all__ = ["WeightPolicy", "DiffWMPCLearner", "WallScanLossCfg", "wallscan_loss",
+           "rc_context", "RC_CTX_DIM"]
 
 
 def _inv_sigmoid(y: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -75,7 +76,7 @@ def _map_to_range(raw: torch.Tensor, lb: torch.Tensor, ub: torch.Tensor, *,
 
 def policy_features(e_now: torch.Tensor, phase: float, *,
                     z_ref=None, s_ref=None,
-                    preview_nodes=()) -> torch.Tensor:
+                    preview_nodes=(), ctx=None) -> torch.Tensor:
     """Single source of truth for the WeightPolicy input, shared by the trainer and the
     deployment adapter — a feature-definition drift between the two is a silent behaviour
     change with no error anywhere, so neither side is allowed its own copy.
@@ -87,6 +88,11 @@ def policy_features(e_now: torch.Tensor, phase: float, *,
     ``z_ref[k]-z_ref[0]`` and ``s_ref[k]-s_ref[0]`` at those stage indices are appended:
     they are exactly the "ramp is about to end / sway leg is coming" signals the solver
     already gets via its own preview but the policy could not see.
+
+    ``ctx`` (V2, RC-WMPC 2026-08-24) appends the online model-adaptation state from
+    :func:`rc_context` — the disturbance-regime analogue of the reference preview: a
+    LEADING signal (what the residual learner already knows) where the error entries are
+    lagging ones. None keeps the pre-RC feature layout bit-for-bit.
     """
     ph = 2 * math.pi * float(phase) / 4.0
     parts = [e_now.reshape(-1).float(),
@@ -97,7 +103,45 @@ def policy_features(e_now: torch.Tensor, phase: float, *,
         s = torch.as_tensor(np.asarray(s_ref), dtype=torch.float32).reshape(-1)
         idx = torch.tensor(nodes, dtype=torch.long).clamp_(0, z.numel() - 1)
         parts += [z[idx] - z[0], s[idx] - s[0]]
+    if ctx is not None:
+        parts.append(torch.as_tensor(np.asarray(ctx), dtype=torch.float32).reshape(-1))
     return torch.cat(parts)
+
+
+RC_CTX_DIM = 5  # rc_context output: tanh(d_world/d) (3) + tanh(pred_err/e) + tanh(|alpha|/a)
+
+
+def rc_context(d_world, pred_err: float, alpha_norm: float, *,
+               d_scale: float = 10.0, e_scale: float = 0.5,
+               a_scale: float = 5.0) -> torch.Tensor:
+    """RC-WMPC context block: the residual learner's adaptation state as policy features.
+
+    Semantics are deliberately split (this split is what the method's H1 mechanism needs):
+
+    - ``d_world`` (N, world frame) is the disturbance the model channel is already
+      COMPENSATING — steady bias direction/magnitude (buoyancy trim, steady current).
+    - ``pred_err`` (learner innovation, m/s^2) is what remains UNCOMPENSATED — it spikes at
+      a regime change before tracking error accumulates and decays as the learner converges.
+    - ``alpha_norm`` is the learner's maturity (RFF coefficient norm).
+
+    Everything is squashed with tanh so a pathological learner state cannot push the policy
+    input out of its training range (the same reasoning as the bounded weight outputs). The
+    scales are V0 normalization constants, not characterized values: d_scale ~ a quarter of
+    one thruster's authority, e_scale ~ the innovation seen at a 0.1 m/s^2 residual, a_scale
+    ~ the alpha norm after convergence on a few-newton residual. A non-finite ``pred_err``
+    (the learner's first tick) contributes 0, not NaN.
+    """
+    d = torch.as_tensor(np.asarray(d_world, dtype=float), dtype=torch.float32).reshape(-1)
+    if d.numel() != 3:
+        raise ValueError(f"d_world must be 3-D world-frame force, got {d.numel()}")
+    e = float(pred_err)
+    e = 0.0 if not math.isfinite(e) else e
+    a = float(alpha_norm)
+    return torch.cat([
+        torch.tanh(d / float(d_scale)),
+        torch.tensor([math.tanh(e / float(e_scale)), math.tanh(a / float(a_scale))],
+                     dtype=torch.float32),
+    ])
 
 
 class WeightPolicy(nn.Module):
@@ -120,7 +164,7 @@ class WeightPolicy(nn.Module):
                  werr_init: np.ndarray | None = None, wu_init: np.ndarray | None = None,
                  werr_lb: float = 0.1, werr_ub: float = 5000.0,
                  wu_lb: float = 5e-3, wu_ub: float = 5.0, log_scale: bool = True,
-                 preview_nodes: tuple[int, ...] = ()):
+                 preview_nodes: tuple[int, ...] = (), ctx_dim: int = 0):
         super().__init__()
         self.feat_dim, self.ne, self.nu = int(feat_dim), int(ne), int(nu)
         self.history_len = int(history_len)
@@ -133,6 +177,14 @@ class WeightPolicy(nn.Module):
                                  torch.tensor([int(k) for k in preview_nodes], dtype=torch.long))
         else:
             self.preview_nodes = torch.zeros(0, dtype=torch.long)
+        # Adaptation-context spec (V2, RC-WMPC): same buffer-only-when-active pattern as
+        # preview_nodes, for the same reason — pre-ctx checkpoints keep strict-loading, and
+        # a ctx-trained checkpoint carries its own feature contract. The VALUE is the ctx
+        # block's width (rc_context -> RC_CTX_DIM); 0 means the pre-RC feature layout.
+        if int(ctx_dim):
+            self.register_buffer("ctx_dim", torch.tensor(int(ctx_dim), dtype=torch.long))
+        else:
+            self.ctx_dim = torch.zeros((), dtype=torch.long)
         # Bounds may be per-entry: the 2026-07-31 collapse was w_radial falling to 2-3, and a
         # floor on just that entry is cheap insurance that costs nothing when it is not binding.
         #
@@ -190,12 +242,15 @@ class WeightPolicy(nn.Module):
         sd = state["policy"] if "policy" in state else state
         hidden, total_in = sd["fc1.weight"].shape
         preview = tuple(int(k) for k in sd.get("preview_nodes", torch.zeros(0)).tolist())
-        feat_dim = ne + 2 + 2 * len(preview)
+        ctx_dim = int(sd.get("ctx_dim", torch.zeros((), dtype=torch.long)))
+        feat_dim = ne + 2 + 2 * len(preview) + ctx_dim
         if total_in % feat_dim:
             raise ValueError(f"fc1 input {total_in} is not a multiple of feat_dim {feat_dim} "
-                             f"(ne={ne}, preview={preview}) — wrong ne/nu for this checkpoint?")
+                             f"(ne={ne}, preview={preview}, ctx_dim={ctx_dim}) — wrong ne/nu "
+                             f"for this checkpoint?")
         policy = cls(feat_dim, ne, nu, history_len=total_in // feat_dim - 1, hidden=hidden,
-                     werr_init=werr_init, wu_init=wu_init, preview_nodes=preview)
+                     werr_init=werr_init, wu_init=wu_init, preview_nodes=preview,
+                     ctx_dim=ctx_dim)
         policy.load_state_dict(sd)
         return policy
 

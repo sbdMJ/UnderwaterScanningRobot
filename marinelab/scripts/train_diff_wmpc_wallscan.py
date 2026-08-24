@@ -103,6 +103,26 @@ parser.add_argument("--preview_nodes", type=str, default="",
                          "Fig. 5/8: the policy must see the future reference to adapt "
                          "weights BEFORE an event). Empty = original current-error-only "
                          "features. Example: '10,20,30'.")
+parser.add_argument("--ssi_in_loop", action="store_true",
+                    help="RC-WMPC (V2, 2026-08-24): run the SSI RFF learner inside the "
+                         "training loop, inject its residual as the OCP's d_world, and "
+                         "append the adaptation-state ctx (rc_context) to the policy "
+                         "features. Joint training through the residual-corrected OCP is "
+                         "the point: the solver sensitivity is a property of the OCP being "
+                         "solved, so a nominal-OCP-trained policy deployed next to SSI is "
+                         "optimized for a different weights->behavior mapping. Pair with "
+                         "--dr_fluid and/or --current_speed so residuals actually vary — "
+                         "on a purely nominal plant ctx is ~constant and the policy learns "
+                         "to ignore it (then RC degenerates to naive stacking).")
+parser.add_argument("--ssi_lr", type=float, default=0.1)
+parser.add_argument("--ssi_n_rf", type=int, default=100)
+parser.add_argument("--ssi_kernel_std", type=float, default=1.0)
+parser.add_argument("--ssi_d_max", type=float, default=float("inf"),
+                    help="Per-axis clamp on the injected |d_world| [N]. inf reproduces the "
+                         "legacy sim behavior; the deployed vehicle default is 5.")
+parser.add_argument("--ssi_d_tau", type=float, default=0.0,
+                    help="Injection low-pass time constant [s]; 0 = off (sim legacy; the "
+                         "vehicle uses 3.0 against its 0.4 s dead time).")
 parser.add_argument("--ckpt", type=str, default=None, help="Evaluate this checkpoint (learning off).")
 parser.add_argument("--resume_ckpt", type=str, default=None,
                     help="Load this checkpoint and CONTINUE learning (E2b online fine-tune: "
@@ -136,7 +156,7 @@ import isaaclab_tasks  # noqa: F401
 import marinelab  # noqa: F401
 
 from marinelab.algorithms.diff_wmpc import (
-    DiffWMPCLearner, WallScanLossCfg, WeightPolicy, policy_features,
+    RC_CTX_DIM, DiffWMPCLearner, WallScanLossCfg, WeightPolicy, policy_features, rc_context,
 )
 from marinelab.assets.pkrc import PKRCThrusterCfg, PKRCThrusterCfgFixedTAM
 from marinelab.tasks.pkrc_wallscan import mpc_reference as mref
@@ -188,7 +208,8 @@ def main() -> None:
     # compromise for all four. The construction itself lives in policy_features() —
     # shared with the deployment adapter so the two can never drift apart.
     preview_nodes = tuple(int(k) for k in args_cli.preview_nodes.split(",") if k.strip())
-    feat_dim = NE + 2 + 2 * len(preview_nodes)
+    ctx_dim = RC_CTX_DIM if args_cli.ssi_in_loop else 0
+    feat_dim = NE + 2 + 2 * len(preview_nodes) + ctx_dim
     werr_lb = np.full(NE, 0.1)
     if args_cli.w_radial_floor > 0.0:
         werr_lb[[0, 6, 7]] = args_cli.w_radial_floor  # radial, head_x, head_y
@@ -199,13 +220,25 @@ def main() -> None:
                                               wu_init=np.full(mpc.nu, DEFAULT_WU))
         preview_nodes = tuple(int(k) for k in policy.preview_nodes.tolist())
         feat_dim = policy.feat_dim
+        # The checkpoint's feature contract wins (same rule as preview): a ctx-trained
+        # checkpoint needs the learner running, and a ctx-less one cannot grow features.
+        if int(policy.ctx_dim) and not args_cli.ssi_in_loop:
+            print("[rc-wmpc] checkpoint carries ctx_dim "
+                  f"{int(policy.ctx_dim)} — forcing --ssi_in_loop on")
+            args_cli.ssi_in_loop = True
+        elif args_cli.ssi_in_loop and not int(policy.ctx_dim):
+            raise SystemExit("--ssi_in_loop with a ctx-less checkpoint: the architecture "
+                             "cannot grow features on resume. Train fresh, or resume "
+                             "without --ssi_in_loop (naive-stacking ablation A1).")
+        ctx_dim = int(policy.ctx_dim)
         print(f"[diff-wmpc] RESUME from {args_cli.resume_ckpt} (learning ON, "
-              f"feat_dim={feat_dim}, preview={preview_nodes})")
+              f"feat_dim={feat_dim}, preview={preview_nodes}, ctx_dim={ctx_dim})")
     else:
         policy = WeightPolicy(feat_dim, NE, mpc.nu, history_len=args_cli.history_len,
                               werr_init=np.asarray(DEFAULT_WERR, float),
                               wu_init=np.full(mpc.nu, DEFAULT_WU), werr_lb=werr_lb,
-                              werr_ub=args_cli.werr_ub, preview_nodes=preview_nodes)
+                              werr_ub=args_cli.werr_ub, preview_nodes=preview_nodes,
+                              ctx_dim=ctx_dim)
     print(f"[diff-wmpc] loss nodes {mpc.sens_nodes} "
           f"(= {[round(k * args_cli.dt_mpc, 2) for k in mpc.sens_nodes]} s ahead)  "
           f"radial/heading floor {args_cli.w_radial_floor}")
@@ -228,6 +261,24 @@ def main() -> None:
     if args_cli.l_u is not None:
         loss_cfg.l_u = args_cli.l_u
     print(f"[diff-wmpc] l_v_z = {loss_cfg.l_v_z}  l_u = {loss_cfg.l_u}")
+
+    # RC-WMPC: the SSI learner runs IN the loop so (a) d_world reaches the OCP the
+    # sensitivity is computed on, (b) rc_context has live values to feed the policy.
+    ssi = None
+    d_filt = np.zeros(3)
+    if args_cli.ssi_in_loop:
+        from marinelab.third_party.ssi_mpc_gpl.rff_learner import RFFOnlineLearner
+        from marinelab.third_party.ssi_mpc_gpl.ssi_controller import (
+            INPUT_MASK_DEFAULT, TARGET_MASK_DEFAULT, _quat_to_rot_np, build_casadi_predictor,
+        )
+
+        ssi = RFFOnlineLearner(state_dim=13, u_dim=mpc.nu, target_mask=TARGET_MASK_DEFAULT,
+                               input_mask=INPUT_MASK_DEFAULT, n_rf=args_cli.ssi_n_rf,
+                               lr=args_cli.ssi_lr, kernel_std=args_cli.ssi_kernel_std,
+                               seed=args_cli.seed)
+        ssi_predict = build_casadi_predictor(prm)  # the deployed controller's predictor
+        print(f"[rc-wmpc] SSI in loop: n_rf={args_cli.ssi_n_rf} lr={args_cli.ssi_lr} "
+              f"d_max={args_cli.ssi_d_max} d_tau={args_cli.ssi_d_tau} ctx_dim={ctx_dim}")
 
     evaluating = args_cli.ckpt is not None
     if evaluating:
@@ -304,6 +355,14 @@ def main() -> None:
         state_m.s_ref[:] = cfg_env.scan.sway_step if phase in (1, 3) else 0.0
         theta_prev[:] = th
         policy.reset_history()
+        if ssi is not None:
+            # Fresh residual per segment: each segment redraws the plant (--dr_fluid) and
+            # the current heading, so alpha carried across segments would describe the
+            # WRONG plant — teaching the policy that d_hat lies. (The deployed controller
+            # keeps alpha across resets because there the plant does not change.)
+            ssi.reset_episode()
+            ssi.alpha[:] = 0.0
+            d_filt[:] = 0.0
 
     new_segment()
     first_solve = True
@@ -340,18 +399,37 @@ def main() -> None:
                 theta_anchor=theta_a, s_anchor=s_a, cfg=mpc_cfg,
             )[0]
 
+        d_world = None
+        ctx = None
+        if ssi is not None:
+            # Same per-step ordering as RCWMPCController.step: score the previous pair,
+            # evaluate the residual at the state the OCP solves from (sim has no command
+            # dead time, so no in-flight roll-forward), guard, inject, expose as ctx.
+            x_np = x0_t[0].cpu().numpy()
+            ssi.update(x_np, dt, ssi_predict)
+            r_b = ssi.residual_now(x_np)
+            d_raw = np.clip(prm.mass * (_quat_to_rot_np(x_np[3:7]) @ r_b),
+                            -args_cli.ssi_d_max, args_cli.ssi_d_max)
+            a_f = dt / (args_cli.ssi_d_tau + dt) if args_cli.ssi_d_tau > 0.0 else 1.0
+            d_filt += a_f * (d_raw - d_filt)
+            d_world = d_filt.copy()
+            ctx = rc_context(d_world, ssi.last_pred_err, float(np.linalg.norm(ssi.alpha)))
+
         with torch.no_grad():
             e_now = errors_at(x0_t[0], 0)
             feat = policy_features(e_now.cpu(), float(state_m.phase[0]),
                                    z_ref=ref["z_ref"][0].cpu(), s_ref=ref["s_ref"][0].cpu(),
-                                   preview_nodes=preview_nodes)
+                                   preview_nodes=preview_nodes, ctx=ctx)
 
         w = learner.compute_weights(feat)
         P = mpc.param_matrix({k: v[0] for k, v in ref.items()},
-                             theta_anchor=float(theta_a), s_anchor=float(s_a))
+                             theta_anchor=float(theta_a), s_anchor=float(s_a),
+                             d_world=d_world)
         out = mpc.solve(x0_t[0].cpu().numpy(), P, w.detach().cpu().numpy(),
                         want_sensitivity=not evaluating, init_state_traj=first_solve)
         first_solve = False
+        if ssi is not None:
+            ssi.record_control(x_np, out["u0_cmd"])
 
         if not evaluating:
             # Each node is scored against the reference THAT node tracks; reusing the stage-0

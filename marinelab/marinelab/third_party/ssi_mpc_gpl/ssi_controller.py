@@ -27,6 +27,34 @@ TARGET_MASK_DEFAULT = [7, 8, 9]  # body linear-velocity rows of x13 (v_dot resid
 INPUT_MASK_DEFAULT = list(range(3, STATE_DIM + U_DIM))
 
 
+def build_casadi_predictor(plant, max_thrust: float | None = None):
+    """RK4 one-step predictor from the SAME CasADi model the MPC solves with.
+
+    Module-level so the RC-WMPC trainer can run the learner in its training loop with
+    exactly the predictor the deployed controller uses (single source of truth; a drift
+    here is a silent train/deploy split). ``predict(x13, u_norm, dt) -> x13``.
+    """
+    import casadi as ca
+
+    from marinelab.tasks.pkrc_wallscan.mpc_controller import _continuous_dynamics
+
+    B = np.asarray(plant.allocation_matrix, float)
+    x = ca.SX.sym("x", STATE_DIM)
+    u = ca.SX.sym("u", U_DIM)  # newtons
+    dt = ca.SX.sym("dt")
+    k1 = _continuous_dynamics(x, u, plant, B, ca.DM.zeros(3))
+    k2 = _continuous_dynamics(x + 0.5 * dt * k1, u, plant, B, ca.DM.zeros(3))
+    k3 = _continuous_dynamics(x + 0.5 * dt * k2, u, plant, B, ca.DM.zeros(3))
+    k4 = _continuous_dynamics(x + dt * k3, u, plant, B, ca.DM.zeros(3))
+    fn = ca.Function("ssi_pred", [x, u, dt], [x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)])
+    f_max = float(plant.max_thrust if max_thrust is None else max_thrust)
+
+    def predict(x_np, u_norm, dt_s):
+        return np.asarray(fn(x_np, np.asarray(u_norm, float) * f_max, dt_s)).reshape(-1)
+
+    return predict
+
+
 def _quat_to_rot_np(q: np.ndarray) -> np.ndarray:
     w, x, y, z = q / max(np.linalg.norm(q), 1e-12)
     return np.array([
@@ -116,29 +144,10 @@ class SSIMPCController(FixedWeightNMPC):
         return self._predict_fn(x, u_norm, dt)
 
     def _build_casadi_predictor(self):
-        """RK4 one-step predictor from the SAME CasADi model the MPC solves with."""
-        import casadi as ca
-
-        from marinelab.tasks.pkrc_wallscan.mpc_controller import _continuous_dynamics
-
-        prm = self._plant
-        if prm is None:
+        """See module-level :func:`build_casadi_predictor` (shared with the RC trainer)."""
+        if self._plant is None:
             raise RuntimeError("no plant params: pass predict_fn= when injecting mpc=")
-        B = np.asarray(prm.allocation_matrix, float)
-        x = ca.SX.sym("x", STATE_DIM)
-        u = ca.SX.sym("u", U_DIM)  # newtons
-        dt = ca.SX.sym("dt")
-        k1 = _continuous_dynamics(x, u, prm, B, ca.DM.zeros(3))
-        k2 = _continuous_dynamics(x + 0.5 * dt * k1, u, prm, B, ca.DM.zeros(3))
-        k3 = _continuous_dynamics(x + 0.5 * dt * k2, u, prm, B, ca.DM.zeros(3))
-        k4 = _continuous_dynamics(x + dt * k3, u, prm, B, ca.DM.zeros(3))
-        fn = ca.Function("ssi_pred", [x, u, dt], [x + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)])
-        max_thrust = self._max_thrust
-
-        def predict(x_np, u_norm, dt_s):
-            return np.asarray(fn(x_np, np.asarray(u_norm, float) * max_thrust, dt_s)).reshape(-1)
-
-        return predict
+        return build_casadi_predictor(self._plant, max_thrust=self._max_thrust)
 
     def reset(self, state: VehicleState) -> None:
         super().reset(state)

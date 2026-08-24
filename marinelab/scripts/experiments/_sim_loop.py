@@ -169,6 +169,29 @@ def build_controller(cell: ExperimentCell, env, cfg):
         )
         ctl.name = "ssi"  # params_json load renames to "bo"; the method identity wins
         return ctl, mpc_cfg
+    if cell.method in ("rc", "rc_naive"):
+        # RC-WMPC: SSI online model adaptation + residual-conditioned weight policy.
+        # "rc_naive" (ablation A1) is the same controller fed a ctx-less Diff-WMPC
+        # checkpoint — the class detects that from the checkpoint and renames itself.
+        from marinelab.third_party.ssi_mpc_gpl.rc_wmpc_controller import RCWMPCController
+
+        if "params_json" in opt:  # SSI half inherits BO-tuned weights (init only; policy overrides)
+            nmpc_kwargs["params_json"] = resolve_path(opt["params_json"])
+        ctl = RCWMPCController(
+            ckpt_path=resolve_path(opt["ckpt"]),
+            step_dt=env.step_dt,
+            ssi_lr=float(opt.get("ssi_lr", 0.1)),
+            ssi_kernel_std=float(opt.get("ssi_kernel_std", 1.0)),
+            ssi_n_rf=int(opt.get("ssi_n_rf", 100)),
+            ssi_seed=int(opt.get("ssi_seed", 0)),
+            ssi_d_max=float(opt.get("ssi_d_max", "inf")),
+            ssi_d_tau=float(opt.get("ssi_d_tau", 0.0)),
+            **nmpc_kwargs,
+        )
+        if ctl.name != cell.method:  # a ctx ckpt under "rc_naive" (or vice versa) is a config bug
+            raise SystemExit(f"method {cell.method!r} but checkpoint resolved to {ctl.name!r} "
+                             f"(ctx_dim mismatch) — wrong ckpt in the config?")
+        return ctl, mpc_cfg
     raise SystemExit(f"unknown method {cell.method!r}")
 
 
