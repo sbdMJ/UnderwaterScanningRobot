@@ -37,6 +37,12 @@ conditions:
 methods:
   nominal:
     tam: fixed
+  # diff added 2026-08-18 (advanced_experiments_todo backlog): zero-shot V8a on the
+  # measured low-authority plant — fills the diff gap in E5 Table 4's sim-side evidence.
+  # Run against the go condition (hwdrag_trim); existing nominal/ssi records untouched.
+  diff:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
   ssi:
     tam: fixed
     params_json: experimental_results/tuning/bo_nmpc/best_params.json

@@ -278,9 +278,15 @@ ros2 run pkrc_wallscan_bridge thrust_mapper --ros-args \
 기본값으로 구움) — `[UNCALIBRATED]`가 뜨면 뭔가 잘못된 것.
 
 **T2 (controller)** — 먼저 로봇을 **가용 컬럼의 중간쯤**에 손으로 잡고 T5에서
-Z_HOLD를 읽는다 (⚠ bar10xt에 ~+0.5 m 오프셋이 있어 이 수조의 state z는
-바닥 ~0.02, 수면 부유 ~0.25 — Z_HOLD는 **0.10–0.15 근방**이 정상이다.
-바닥·수면과 각각 ≥8 cm 여유 확인):
+Z_HOLD를 읽는다. ⚠ **Z_HOLD는 매 세션 새로 읽는다 — 절대 지난 세션 값 재사용
+금지.** state z 프레임은 estimator가 세션마다 재앵커하고 bar10xt 오프셋도
+표류한다: 08-18 세션은 부유 0.25/바닥 0.016이었지만 08-19 세션은 부유
+0.98/바닥 0.73이었고, 재사용한 0.13이 **바닥보다 0.6 m 아래**가 되어 캡 추력으로
+바닥 고착 (bag 22_36_50, `hw_bag_depthhold_2236_20260819.py`). 절대값이 아니라
+**방금 읽은 z에서 컬럼 중간으로 10 cm 안쪽**을 고른다 (바닥·수면 각각 ≥8 cm 여유).
+이제 컨트롤러가 enable 시 |z−hold_z| > 0.3 m이면 `HOLD-Z SANITY` ERROR와 함께
+enable을 거부한다 — 이 에러가 보이면 낡은 값을 쓴 것이니 다시 읽어라
+(의도적 원거리 목표는 `-p hold_z_sanity_m:=`으로 완화, 0 = 비활성):
 
 ```bash
 ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HOLD
@@ -292,28 +298,95 @@ ros2 topic echo --once /wallscan/state --field pose.pose.position.z   # → Z_HO
 ```bash
 ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
   -p method:=nominal -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
-  -p params_json:=$HOME/mj_ws/experimental_results/tuning/bo_nmpc/best_params.json \
+  -p params_json:=$MARINELAB_ROOT/config/depthhold_rate_weights.json \
+  -p thrust_limits:="[0.0,0.0,0.0,0.0,2.25,2.25]" \
   -p hold_z:=Z_HOLD -p depth_only:=true \
   -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
 # hold_z: 상태머신 우회(고정 z_ref) — 2026-08-18 bag 03_41에서 위상 순환이
 # z_ref를 0.13↔0.17로 튕겨 15 cm 리밋사이클을 만든 것의 근본 수정.
-# depth-hold가 서면 method:=ssi로 재시도 (온라인 적응까지 시험; 바닥 접촉이
-# 있었던 세션에서는 학습기가 접촉 잔차를 배우므로 접촉 없이 재-enable할 것)
+# 2026-08-19 (bag 04_15 → 근본원인 ⑧ 수정): plant JSON이 ACTUATOR-RATE 모델을
+# 켠다 (force_rate_limit = teleop 램프 17 A/s × k; MPC가 전류 램프를 예측에 반영
+# → 뱅뱅 relay 제거). params_json은 rate 모델 전용 depth-hold 가중치
+# (z=8, v_z=15, wu=0.1 — 기본 z=40/wu=0.01은 vz LPF 0.5 s 지연과 공진해 7 cm
+# 리밋사이클, _probe_rate_mpc.py 실측; BO best_params는 rate 모델에 이월 불가).
+# thrust_limits = 이 세션의 실현 가능 힘 k(amps_limit−I₀): 수평 데드존 클램프 = 0,
+# heave 3 A = 2.25 N — 모델이 없는 힘을 계획하거나 수평을 동원하는 것을 차단.
+# depth-hold가 서면 method:=ssi로 재시도 — 절차는 아래 "SSI 재시도" 블록
 ```
 
-기대 로그: `building acados solver ...` (첫 회 수 분; 5분 초과 시
-`rm -rf ~/.cache/wallscan_acados` 후 재시작) → `wallscan controller up ...`
-→ **WARN 2개 필수 확인**: `DEPTH-ONLY mode: zeroed werr ...` (없으면
+**SSI 재시도 (nominal depth-hold 합격 후, 2026-08-19 bag 23_47 기준)** — 목표:
+nominal에 남는 **+3~6 cm 편측 오프셋**(평형력이 마찰 데드존 내부라 생기는 구조
+한계)을 SSI의 온라인 잔차 학습(d_world 주입)이 흡수하는지 확인. T2만 바꾼다
+(Ctrl-C 후 재기동; T1/T3는 그대로):
+
+```bash
+ros2 run pkrc_wallscan_bridge wallscan_controller --ros-args \
+  -p method:=ssi -p plant_json:=$MARINELAB_ROOT/config/pkrc_plant_hw2026.json \
+  -p params_json:=$MARINELAB_ROOT/config/depthhold_rate_weights.json \
+  -p thrust_limits:="[0.0,0.0,0.0,0.0,2.25,2.25]" \
+  -p hold_z:=Z_HOLD -p depth_only:=true \
+  -p z_top:=Z_HOLD -p z_bottom:=Z_HOLD -p sway_step:=0.0 -p reach_eps:=0.05
+```
+
+- method:=ssi 외 전부 nominal 시나리오-③과 동일 (SSI는 FixedWeightNMPC를 상속 —
+  rate 모델·LATENCY PREDICTOR·가중치·캡이 그대로 탑재된다). SSI 하이퍼파라미터
+  (`ssi_lr` 등)는 tuning attempt-2 trial 87 채택값이 노드 기본값.
+- **원인 ⑩ 가드 (2026-08-20 bag 00_33)**: 1차 ssi 시도는 학습기의 회귀 쌍이
+  0.4 s 데드타임에 오염돼 10–12 N 유령 외란을 주입, 13–15 cm 리밋사이클로 실패.
+  수정 3종이 노드 기본값으로 탑재됨 — 지연 정렬 회귀 쌍(command_latency_s 사용),
+  주입 저역통과 `ssi_d_tau`=3 s(안정성의 핵심), 클램프 `ssi_d_max`=5 N.
+  이 값들을 끄지 말 것 (0으로 끄면 00_33 재현).
+- 기동 확인: WARN 4개 동일 + `wallscan controller up: method='ssi'`.
+- **enable 후 손 대지 말 것** (push 시험은 nominal bag에서만): 학습기는 모든
+  미모델 힘을 잔차로 배우므로, 손/테더 개입은 오염이다.
+- **접촉이 생기면 disable로 끝나지 않는다**: 학습기 가중치(alpha)는 re-enable에도
+  유지되도록 설계돼 있다 (`reset_episode`는 alpha 보존). 바닥·수면·테더 접촉이
+  있었으면 **T2 노드를 재시작**하고 다시 enable.
+- 판정 (60–90 s bag): controller_debug가 ssi에서 4채널 연장된다 —
+  `[7:10]=d_world`(N, world), `[10]=1스텝 예측오차 노름`. 합격 신호는
+  ① d_world[2]가 수십 초 안에 준정상값으로 수렴 (기대: 실부력잔차 ~+0.2–0.5 N),
+  ② |z−z_ref| 평균이 nominal의 +4 cm에서 유의미하게 감소, ③ 리플은 nominal과
+  동급(±2–3 cm), heave 비포화 유지. 예측오차가 지속 증가하거나 d_world가 발산하면
+  즉시 OFF — 잔차 학습이 지연/접촉과 얽힌 것 (bag 가져와 분석).
+
+기대 로그: `building acados solver ...` (**rate 모델 첫 기동은 nx 변경으로 C 코드
+재생성 — 수 분 소요가 정상**; 5분 초과 시 `rm -rf ~/.cache/wallscan_acados` 후
+재시작) → `wallscan controller up ...`
+→ **WARN 4개 필수 확인**: `ACTUATOR-RATE model: force slew ...` (없으면 plant
+JSON이 구버전 — rsync 확인) + `LATENCY PREDICTOR: rolling state forward 0.40 s ...`
+(없으면 plant JSON 구버전 — 없이는 ~0.4 s 왕복 지연이 16 cm/4.2 s 캡 스윙
+리밋사이클을 만든다, bag 23_03 실측) + `DEPTH-ONLY mode: zeroed werr ...` (없으면
 depth_only 누락 — 2026-08-18에 두 번 누락, 바닥 고착·리밋사이클 재발) +
 `DEPTH-HOLD mode: phase machine bypassed, z_ref -> ...`
 → `/wallscan/u`·current_cmd 50 Hz.
 
 enable 후 30초 안에 확인 (`ros2 topic echo /wallscan/u`):
-- **u[0..3] ≈ 0** — 0이 아니면 depth_only가 안 들어간 것 (03_41 bag에서
-  |u0| 평균 0.52로 검출; 수평 데드존 클램프 덕에 위험하진 않지만 무효 시험)
+- **u[0..3] ≈ 0** — 단, 이 규칙은 **heave가 비포화일 때만** 유효 (04_15 bag 실측:
+  depth_only가 켜져 있어도 heave 포화 중엔 옵티마이저가 pitch 트림을 통해 수평
+  스러스터를 cost-free로 동원해 u[0..3]가 u[4]와 동기 부호반전, |평균| 0.1–0.3).
+  진짜 누락 시그니처는 03_41처럼 **준-DC 클램프 고착**(|u0| 평균 ≥0.5, 부호 고정)
+  — 허구 벽 오차가 상수라서 흔들리지 않는다. 헷갈리면 T2의
+  `DEPTH-ONLY mode:` WARN 로그가 정본.
 - **u[4], u[5]가 ±1 포화 왕복이 아님** — 포화 왕복(03_41: 틱의 78%)이면
-  z_ref가 튀고 있는 것 (hold_z 누락) → 즉시 OFF
+  z_ref가 튀고 있는 것 (hold_z 누락) → 즉시 OFF.
+  ※ 04_15 실측: hold_z·depth_only 둘 다 정상이어도 **relay 리밋사이클**(근본원인
+  ⑧, werr z=40 near-relay + teleop 램프 지연)로 81% 포화·±5 cm 진동이 남는다 —
+  이 경우 hold_z 누락 오진 금지, 진단은 phase 고정 여부로 구분 (누락이면 위상
+  순환, 원인 ⑧이면 phase 0 고정인데 포화 왕복). ACTUATOR-RATE 모델 + rate 전용
+  가중치가 이 원인의 수정 — 그 구성에서 u[4] 포화 왕복이 다시 보이면 params_json
+  누락(기본 z=40이 vz 지연과 공진)부터 의심하고, params_json도 정상인데 **~4 s
+  주기 캡-투-캡 왕복**이면 원인 ⑨ = LATENCY PREDICTOR 미적용 (bag 23_03: 왕복
+  지연 ~0.4 s가 모든 가중치 세트를 리밋사이클로 몰았다 — WARN 4개 중
+  `LATENCY PREDICTOR` 확인).
+- **u[4]/u[5]가 캡(−0.61 = −2.25/3.68)에 한 방향으로 고정된 채 z 접근이 멈추면
+  즉시 OFF** — 도달 불가능한 z_ref다 (22_36 실측: 바닥 아래 목표를 향해 15 s간
+  캡 추력으로 바닥 고착). rate 모델의 정상 정착은 u[4]가 캡 아래에서 완만히
+  움직이는 모습이다 (틱당 변화 ≤ 0.09).
 - controller_debug의 phase(2번째 값)가 **0에 고정** (위상 순환 = hold_z 누락)
+- controller_debug의 solve_ms: nx 19로 **Jetson h20/rti4가 ~26 ms** (bag 22_36
+  실측; 이전 15.6–16.2). 20 ms 틱을 넘는 soft overrun — teleop stale 문턱(0.5 s)
+  대비 무해하고 f_act 부기는 보수 방향이지만, 더 커지면 `-p rti_iters:=3` 또는
+  `-p horizon:=15`를 E4(c) 프로토콜로 벤치 후 적용.
 
 **T4 (teleop — mj_ws 것, hero_ws teleop은 먼저 종료)**:
 

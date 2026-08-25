@@ -87,9 +87,82 @@ def test_controller_injects_learned_residual_as_d_world():
     d = fake.d_worlds[-1]
     assert d is not None and np.abs(d).max() > 0
     # identity attitude: d_world = mass * residual_b, dominant on the z (heave) axis
+    # (legacy class defaults: no clamp, no injection low-pass — sim behavior unchanged)
     r_b = ctl.learner.residual_now(_state(vz=0.02 * 59).to_x13())
     np.testing.assert_allclose(d, 22.8 * r_b, rtol=1e-9)
     assert np.argmax(np.abs(d)) == 2
+
+
+class VaryingFakeMPC(FakeMPC):
+    """u0 encodes the tick index so latency alignment is observable at the learner."""
+
+    def __init__(self):
+        super().__init__()
+        self.k = 0
+
+    def solve(self, x0, P, weights, *, want_sensitivity=True, init_state_traj=False):
+        self.k += 1
+        u0 = np.full(6, float(self.k))
+        return {"u0": u0, "u0_cmd": u0 / 40.0, "status": 0}
+
+
+def test_latency_aligned_regression_pairs():
+    """Field 2026-08-20 (bag 00_33_31): pairing the learner with the CURRENT command
+    feeds it phase-shifted residuals under the chain's dead time — it learned a 10-12 N
+    oscillating ghost disturbance. With latency_s set, record_control must receive the
+    command from latency_s/step_dt ticks ago (zeros while nothing is in flight)."""
+    fake = VaryingFakeMPC()
+    ctl = SSIMPCController(mpc=fake, step_dt=0.02, mass=22.8, max_thrust=40.0,
+                           predict_fn=lambda x, u, dt: np.asarray(x, float),
+                           ssi_n_rf=8, ssi_seed=0, latency_s=0.04)  # 2 ticks
+    ctl.reset(_state())
+    ref = ScanReference.frozen(30, z_ref=5.0, s_ref=0.0)
+    ctl.step(_state(), ref)   # publishes k=1; in-flight window still zeros
+    np.testing.assert_allclose(ctl.learner._u_last, 0.0)
+    ctl.step(_state(), ref)   # publishes k=2; window [0, k=1]
+    np.testing.assert_allclose(ctl.learner._u_last, 0.0)
+    ctl.step(_state(), ref)   # publishes k=3; the k=1 command is now acting
+    np.testing.assert_allclose(ctl.learner._u_last, 1.0 / 40.0)
+    ctl.step(_state(), ref)
+    np.testing.assert_allclose(ctl.learner._u_last, 2.0 / 40.0)
+    ctl.reset(_state())       # re-enable: in-flight window is zeros again
+    ctl.step(_state(), ref)
+    np.testing.assert_allclose(ctl.learner._u_last, 0.0)
+
+
+def test_d_world_is_clamped_to_the_physical_bound():
+    fake = FakeMPC()
+    ctl = SSIMPCController(mpc=fake, step_dt=0.02, mass=22.8, max_thrust=40.0,
+                           predict_fn=lambda x, u, dt: np.asarray(x, float),
+                           ssi_n_rf=8, ssi_seed=0, ssi_d_max=5.0)
+    ctl.reset(_state())
+    ctl.learner.alpha[:] = 100.0  # pathological learner state -> huge residual
+    ctl.step(_state(), ref=ScanReference.frozen(30, z_ref=5.0, s_ref=0.0))
+    d = fake.d_worlds[-1]
+    assert np.abs(d).max() <= 5.0 + 1e-9
+    assert np.abs(22.8 * ctl.learner.residual_now(_state().to_x13())).max() > 5.0
+
+
+def test_d_world_injection_low_pass():
+    """Stability half of the bag-00_33 fix: with ssi_d_tau set, the injected d_world is
+    an EMA of the (clamped) raw residual — one step moves it by dt/(tau+dt)."""
+    fake = FakeMPC()
+    ctl = SSIMPCController(mpc=fake, step_dt=0.02, mass=22.8, max_thrust=40.0,
+                           predict_fn=lambda x, u, dt: np.asarray(x, float),
+                           ssi_n_rf=8, ssi_seed=0, ssi_d_max=5.0, ssi_d_tau=3.0)
+    ctl.reset(_state())
+    ctl.learner.alpha[:] = 100.0  # raw residual saturates the 5 N clamp instantly
+    ref = ScanReference.frozen(30, z_ref=5.0, s_ref=0.0)
+    ctl.step(_state(), ref)
+    a_f = 0.02 / 3.02
+    np.testing.assert_allclose(np.abs(fake.d_worlds[-1]).max(), 5.0 * a_f, rtol=1e-6)
+    ctl.step(_state(), ref)  # second step: EMA keeps approaching the clamp, not jumping
+    np.testing.assert_allclose(np.abs(fake.d_worlds[-1]).max(),
+                               5.0 * (a_f + a_f * (1 - a_f)), rtol=1e-3)
+    ctl.reset(_state())      # re-enable clears the filter state
+    ctl.learner.alpha[:] = 0.0
+    ctl.step(_state(), ref)
+    np.testing.assert_allclose(fake.d_worlds[-1], 0.0)
 
 
 def test_controller_reconfigure_and_identity():

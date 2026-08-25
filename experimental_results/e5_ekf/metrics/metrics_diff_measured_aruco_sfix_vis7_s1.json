@@ -1,0 +1,79 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.2685679793357849,
+  "tilt_sway_deg": 0.16600234806537628,
+  "tilt_deg": 0.25906142592430115,
+  "crab_deg": 1.3077183961868286,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.20077234036208247,
+  "sway_speed_mps": 0.09930571877812763,
+  "heave_path_speed_mps": 0.20077234036208247,
+  "sway_path_speed_mps": 0.09931381926479109,
+  "heave_legs_scored": 3,
+  "sway_legs_scored": 4,
+  "wall_dist_err_cm": 12.029296904802322,
+  "cycles_mean": 2.0,
+  "cycles_per_env": [
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "e5_ekf",
+  "method": "diff",
+  "cond": "measured_aruco_sfix_vis7",
+  "seed": 1,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "ukfm_theta": true,
+    "ukfm_max_depth": 7.0,
+    "tam": "fixed",
+    "ckpt": "checkpoints/diff_wmpc/policy_final.pt",
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 7.220004689000133,
+    "solve_ms_p95": 7.86072245100513,
+    "solve_ms_max": 129.9202530644834,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.013555555555555555
+  },
+  "score": {
+    "objective": 208.81586554142413,
+    "collided": false,
+    "scored_losses": [
+      208.81586554142413
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.017237007708950116,
+    "phi_rmse_deg": 1.2928846973602797,
+    "s_rmse_m": 0.029178289470999763
+  }
+}

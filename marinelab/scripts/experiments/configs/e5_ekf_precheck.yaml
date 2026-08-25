@@ -41,6 +41,12 @@ conditions:
 methods:
   nominal:
     tam: fixed
+  # diff added 2026-08-18 (advanced_experiments_todo §C / concern C-2): zero-shot V8a
+  # under the EKF+vis7 perception stack — the mandatory gate before E5 includes diff.
+  # New metrics files only; existing nominal/ssi records untouched.
+  diff:
+    tam: fixed
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
   ssi:
     tam: fixed
     params_json: experimental_results/tuning/bo_nmpc/best_params.json  # §6: inherits BO cost weights
