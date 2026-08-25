@@ -1,0 +1,36 @@
+# RC-WMPC on the E2 zero-shot robustness protocol (fills the rc column of the E2 table,
+# 2026-08-25). Conditions/seeds/protocol IDENTICAL to e2_dr_sweep.yaml so rows join the
+# existing e2 table directly; OWN results dir (e2_rc) so frozen e2 artifacts stay intact.
+#
+#   rc       — full method: SSI injection + ctx-conditioned weight policy (V0 ckpt,
+#              same ckpt as the e1_rc/e3_rc rows — keeps the main-table method identity)
+#   rc_naive — ablation A1: SSI injection + the E1 diff ckpt (naive stacking)
+#
+# Zero-shot by construction: both ckpts deploy unchanged, matching E2's rule that every
+# method carries its nominal tuning into the DR sweep.
+exp: e2_rc
+
+defaults:
+  task: Isaac-PKRC-WallScan-Eval-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: gt
+  num_envs: 1
+  tam: fixed
+
+conditions:
+  dr25: {dr_fluid_scale: 0.25}
+  dr50: {dr_fluid_scale: 0.50}
+  dr75: {dr_fluid_scale: 0.75}
+
+methods:
+  rc:
+    ckpt: checkpoints/rc_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384          # ssi_mpc attempt-2 trial 87 (same as e2 ssi cells)
+    ssi_kernel_std: 0.18398034704266503
+  rc_naive:
+    ckpt: checkpoints/diff_wmpc/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2]

@@ -48,8 +48,14 @@ def collect(results_dir: str) -> list[dict]:
         if m is None:
             continue
         with open(path) as fh:
-            row = flatten(json.load(fh))
-        row["method"], row["cond"], row["seed"] = m["method"], m["cond"], int(m["seed"])
+            raw = json.load(fh)
+        row = flatten(raw)
+        # The runner records method/cond/seed inside the json; trust those when present.
+        # The filename regex is ambiguous for method names with underscores (rc_naive):
+        # metrics_rc_naive_dr50_s1.json would parse as method "rc", cond "naive_dr50".
+        row["method"] = raw.get("method") or m["method"]
+        row["cond"] = raw.get("cond") or m["cond"]
+        row["seed"] = int(raw.get("seed", m["seed"]))
         rows.append(row)
     return rows
 
@@ -90,9 +96,10 @@ def write_table_csv(summary: dict, metrics: list[str], path: str) -> None:
                             entry["n_trials"], ";".join(f"{v:.6g}" for v in s["values"])])
 
 
-METHOD_ORDER = ("nominal", "bo", "ppo", "ssi", "diff")
+METHOD_ORDER = ("nominal", "bo", "ppo", "ssi", "diff", "rc_naive", "rc")
 METHOD_LABELS = {"nominal": "Nominal NMPC", "bo": "BO-tuned NMPC", "ppo": "PPO",
-                 "ssi": "SSI-MPC", "diff": "Diff-WMPC (ours)"}
+                 "ssi": "SSI-MPC", "diff": "Diff-WMPC (ours)",
+                 "rc": "RC-WMPC (ours)", "rc_naive": "SSI+Diff-WMPC (naive)"}
 
 
 def _method_key(method: str) -> int:

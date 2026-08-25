@@ -1,0 +1,8 @@
+{
+ "trials": 1,
+ "episodes": 22,
+ "env_steps": 20000,
+ "wall_clock_s": 611.0,
+ "method": "rc_wmpc_train",
+ "note": "RC-WMPC V0 joint training (SSI-in-loop, ctx_dim=5, 20k learner steps, dr_fluid 0.75 + current 0.15; the ckpt behind the e1_rc/e2_rc/e3_rc 'rc' rows). wall_clock_s derived from checkpoint mtimes on this host 2026-08-24 (5k->final 458 s over 15k steps -> 152.7 s per 5k, first 5k extrapolated at the same rate); app startup + acados codegen (~2-3 min) NOT included. episodes = 20000/900-step segments (approx). Variants for reference, same derivation: V1 (30k, +authority mix U(3,12) N, degenerate skip) ~985 s; dw_v1_noctx / naive2 (30k, same recipe minus SSI-in-loop) ~981 s. Contrast row: nominal Diff-WMPC training lives in diff_wmpc_training/budget.json (60k steps, ~3000 s)."
+}

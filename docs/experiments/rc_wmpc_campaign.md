@@ -65,6 +65,44 @@ rc V1 − naive2: 개별 {+4.8, −20.9, −60.9, +13.5, −19.4, −3.8, −2.0
 패턴: 어려운 seed에서 크게 이기고(−19~−61) 쉬운/획득 seed에서 소폭 짐(+5/+13).
 n=10에서 정지 — 결과를 본 뒤의 seed 추가(optional stopping)는 금지.
 
+### 9. E2 rc 열 (zero-shot DR 스윕, 2026-08-25) — 본 비교표 완결
+
+`e2_rc.yaml` (e2와 동일 프로토콜: Eval task, dr_fluid ±25/50/75%, GT, 3 seeds).
+18/18 셀 완주, 전 방법 전 조건 2사이클 완주(붕괴 없음).
+
+| wall_dist_err [cm] | nominal | bo | ssi | diff | naive1 | rc |
+|---|---|---|---|---|---|---|
+| dr25 | 13.97 | 16.40 | 16.44 | 15.70 | 15.92 | **14.55** |
+| dr50 | 13.63 | 16.26 | 17.78 | 15.42 | 15.52 | **14.21** |
+| dr75 | 13.32 | 16.15 | 16.77 | 15.16 | 15.16 | **13.93** |
+
+- **score.objective는 rc가 전 강도에서 전체 1위** (2699/2628/2588 vs nominal
+  4234/4246/4291 — nominal은 wall_dist만 좋고 tilt 14.2° vs diff 계열 11.9°).
+- 쌍갭 rc − naive1 = −1.36/−1.30/−1.23 cm (3 강도 모두 음수, seed2가 −3.4~−3.8로
+  견인, seed0/1은 ±0.5 내 — "어려운 seed에서 이긴다" 패턴의 GT 재현).
+- crab_deg도 rc가 일관 우위 (dr75: 1.67° vs naive1 2.43°).
+- dr75에서 saturated_frac ~0.30 — DR이 포화를 올릴수록 rc 갭 방향 유지(권한 스윕
+  서사와 정합). 열화 기울기는 전 방법 평평(25→75% 스윕에 대해 zero-shot 강건, C3).
+- figure: `e2_rc/figures/fig_f3_with_rc.*` (+objective 버전), 조인 뷰는 symlink 병합.
+
+### 10. E4 rc 열 (비용, 2026-08-25)
+
+- **(b) 학습 비용**: `tuning/rc_wmpc_training/budget.json` — V0 20k 스텝 **~611 s**
+  (ckpt mtime 도출, 앱 기동 ~2–3분 제외 명기; V1 30k ~985 s, naive2 30k ~981 s).
+  diff 60k ~3000 s의 1/5. `collect_budgets`/f6가 자동 수집 (`rc_wmpc_training`→`rc`).
+- **(c) 추론 비용** (e1 nominal, 데스크톱, 5 seeds): rc solve **8.34±1.05 ms**
+  (naive1 8.40, ssi 8.03, diff 9.16, nominal 8.82) — ctx forward + RFF 업데이트는
+  acados solve에 묻힘, p95 13.5 ms로 50 Hz 예산(20 ms) 내. Jetson 실측은 diff 계열
+  기존 bench(`e4_inference/`)에서 외삽 가능하나 rc 자체 실측은 미실시(잔여 항목).
+- figure: `e1_rc/figures/fig_f6_with_rc.*` (offline/inference 이중 패널).
+- E4(a) ablation의 rc 대응물은 별도 실행 불필요 — naive1(A1)·naive2가 이 캠페인의
+  ablation 축이며 §5–8에 기록됨.
+
+인프라 노트: `aggregate.collect()`가 파일명 대신 json 내부의 method/cond/seed를
+우선하도록 수정 (`rc_naive` 같은 밑줄 방법명이 regex에서 오파싱되던 문제).
+METHOD_{ORDER,LABELS,COLORS,MARKERS}에 rc("RC-WMPC (ours)", #A2142F, P)·
+rc_naive("SSI+Diff-WMPC (naive)", #4DBEEE, X) 등록.
+
 ## 방법론적 부산물
 
 - **완화 배리어 sensitivity: 구조적 실패** (`mpc_controller.sens_relax`, 봉인).

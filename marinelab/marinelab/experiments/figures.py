@@ -53,8 +53,10 @@ plt.rcParams.update({
 
 # MATLAB default color order, fixed per method across every figure.
 METHOD_COLORS = {"nominal": "#0072BD", "bo": "#D95319", "ppo": "#EDB120",
-                 "ssi": "#77AC30", "diff": "#7E2F8E"}
-METHOD_MARKERS = {"nominal": "o", "bo": "s", "ppo": "^", "ssi": "d", "diff": "v"}
+                 "ssi": "#77AC30", "diff": "#7E2F8E",
+                 "rc": "#A2142F", "rc_naive": "#4DBEEE"}
+METHOD_MARKERS = {"nominal": "o", "bo": "s", "ppo": "^", "ssi": "d", "diff": "v",
+                  "rc": "P", "rc_naive": "X"}
 
 
 def _color(method: str) -> str:
