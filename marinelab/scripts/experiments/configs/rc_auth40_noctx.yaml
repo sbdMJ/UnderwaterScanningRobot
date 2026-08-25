@@ -1,0 +1,40 @@
+# 40 N EKF collapse-causality ablation (2026-08-25): is collapse prevention due to ctx,
+# or merely the V1 TRAINING DISTRIBUTION? Method rc_naive here = SSI + a ctx-less policy
+# trained with the FULL V1 recipe minus --ssi_in_loop (dw_v1_noctx: dr_fluid 0.75,
+# current 0.15, authority mix, degenerate skip, 30k, seed 0).
+# Pre-registered read: rc(V1) gap persists vs THIS baseline -> ctx causal;
+# gap vanishes (no collapse) -> training distribution causal. Either way it ships.
+# Context: with the nominal-trained diff ckpt, naive collapsed its weights mid-episode
+# in 1-2/5 seeds (s1: w_radial 4896 -> 10, drift; paired gap -10.0 cm, ties elsewhere).
+exp: rc_auth40_noctx
+
+defaults:
+  task: Isaac-PKRC-WallScan-Stage3-Direct-v0
+  steps: 9000
+  score_episode: 0
+  state: ekf
+  num_envs: 1
+  sensors: hw2026bag_aruco
+  ukfm_theta: true
+  ukfm_max_depth: 7.0
+  max_thrust: 40.0
+  tam: fixed
+
+conditions:
+  auth40:
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+  # Added 2026-08-25 after the auth40 verdict (distribution causal there): the SAME
+  # deconfound applied to the HEADLINE point. If rc still beats this baseline at 3.68 N,
+  # the conditioning claim survives; if not, the contribution reduces to training-
+  # distribution diversity and the paper story must say so.
+  lowthrust_current:
+    max_thrust: 3.68
+    current: {type: step, speed: 0.15, heading_deg: 0.0, t_switch: 90.0, mode: reverse}
+
+methods:
+  rc_naive:
+    ckpt: checkpoints/dw_v1_noctx/policy_final.pt
+    ssi_lr: 0.14733286466312384
+    ssi_kernel_std: 0.18398034704266503
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

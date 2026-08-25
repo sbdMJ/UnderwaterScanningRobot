@@ -38,4 +38,6 @@ methods:
     ssi_lr: 0.14733286466312384
     ssi_kernel_std: 0.18398034704266503
 
-seeds: [0, 1, 2]
+# seeds 3-4 added 2026-08-25 for the auth40 verification (the unplanned 3/3 gap
+# reappearance under EKF needed n=5 before being claimed).
+seeds: [0, 1, 2, 3, 4]

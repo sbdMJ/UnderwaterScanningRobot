@@ -1,0 +1,89 @@
+{
+  "num_envs": 1,
+  "num_steps": 9000,
+  "step_dt": 0.02,
+  "scored_episode": 0,
+  "scored_steps": 8998,
+  "tilt_heave_deg": 0.7125909924507141,
+  "tilt_sway_deg": 0.24740009009838104,
+  "tilt_deg": 0.6694737672805786,
+  "crab_deg": 1.5272365808486938,
+  "s_hat_err_cm": 0.0,
+  "heave_speed_mps": 0.20045499156292218,
+  "sway_speed_mps": 0.09906989982329219,
+  "heave_path_speed_mps": 0.20045499156292218,
+  "sway_path_speed_mps": 0.09908153350094714,
+  "heave_legs_scored": 3,
+  "sway_legs_scored": 4,
+  "wall_dist_err_cm": 11.976821720600128,
+  "cycles_mean": 2.0,
+  "cycles_per_env": [
+    2.0
+  ],
+  "heave_speed_target_mps": 0.2,
+  "sway_speed_target_mps": 0.1,
+  "d_ref_m": 1.5,
+  "episode_steps_mean": 8999.0,
+  "episode_s_mean": 179.98,
+  "episode_s_per_env": [
+    179.98
+  ],
+  "episode_s_nominal": 180.0,
+  "scored_episode_truncated": false,
+  "terminations": {
+    "total": 1,
+    "time_out": 1,
+    "collided": 0,
+    "out_of_bounds": 0,
+    "tilted": 0,
+    "success": 0
+  },
+  "exp": "rc_auth40_noctx",
+  "method": "rc_naive",
+  "cond": "auth40",
+  "seed": 1,
+  "options": {
+    "task": "Isaac-PKRC-WallScan-Stage3-Direct-v0",
+    "steps": 9000,
+    "score_episode": 0,
+    "state": "ekf",
+    "num_envs": 1,
+    "sensors": "hw2026bag_aruco",
+    "ukfm_theta": true,
+    "ukfm_max_depth": 7.0,
+    "max_thrust": 40.0,
+    "tam": "fixed",
+    "current": {
+      "type": "step",
+      "speed": 0.15,
+      "heading_deg": 0.0,
+      "t_switch": 90.0,
+      "mode": "reverse"
+    },
+    "ckpt": "checkpoints/dw_v1_noctx/policy_final.pt",
+    "ssi_lr": 0.14733286466312384,
+    "ssi_kernel_std": 0.18398034704266503,
+    "device": "cuda:0"
+  },
+  "controller_cost": {
+    "n_steps": 9000,
+    "solve_ms_mean": 7.160894019037692,
+    "solve_ms_p95": 8.092975767794997,
+    "solve_ms_max": 122.56361701292917,
+    "fail_frac": 0.0,
+    "saturated_frac": 0.026555555555555554
+  },
+  "score": {
+    "objective": 228.63799707510188,
+    "collided": false,
+    "scored_losses": [
+      228.63799707510188
+    ]
+  },
+  "estimator": {
+    "sensors": "hw2026bag_aruco",
+    "r_rmse_m": 0.01692465371902499,
+    "phi_rmse_deg": 1.4687346499107123,
+    "s_rmse_m": 0.024085423098319785
+  }
+}
